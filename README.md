@@ -16,10 +16,18 @@ The player starts as a strong local/offline media player. Its architecture is de
 - Persistent read permission for manually selected videos where supported
 - Resume position and basic watch state stored as metadata only
 - Standard playback controls supplied by Media3
-- A stable `MomentumEvent` contract for future intelligence integration
+- Stable `MomentumEvent` contract for playback behavior
+- Bounded, asynchronous JSON Lines behavioral logging
+- Local diagnostics export from the library screen
 - Application ID: `com.innotrepid.videoplayer`
 
 The app never copies the original video bytes into its private library. The library stores references and metadata, so a 10 GB movie does not become a 10 GB app.
+
+## Diagnostics
+
+Playback events are stored locally in the app's private storage as a bounded JSON Lines log. The recorder captures starts, resumes, pauses, seeks, completions, skips and playback errors without storing the original video bytes.
+
+Use **Export Diagnostics** in the library to create a local diagnostics file and share it through Android's share sheet. This is intended to make bug reports reproducible without manually remembering what happened during a test session.
 
 ## Planned evolution
 
@@ -34,6 +42,6 @@ The app never copies the original video bytes into its private library. The libr
 
 ## Status
 
-**v0.3.0 — automatic device video indexing**
+**v0.4.0 — behavioral telemetry + local diagnostics**
 
 The repository intentionally starts small. Playback reliability and a trustworthy local library come before intelligence features.
