@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** Small JSON-backed local store. Deliberately dependency-light for the first library build. */
+/** Small JSON-backed local metadata store. Original video bytes never live here. */
 class VideoLibrary(context: Context) {
     private val file = File(context.filesDir, "video_library.json")
     private val items = LinkedHashMap<String, VideoItem>()
@@ -63,12 +63,15 @@ class VideoLibrary(context: Context) {
             val array = JSONArray(file.readText())
             for (index in 0 until array.length()) {
                 val objectValue = array.getJSONObject(index)
-                val uri = Uri.parse(objectValue.getString("uri"))
                 val item = VideoItem(
                     id = objectValue.getString("id"),
-                    uri = uri,
+                    uri = Uri.parse(objectValue.getString("uri")),
                     title = objectValue.optString("title", "Untitled video"),
                     durationMs = objectValue.optLong("durationMs", 0L),
+                    sizeBytes = objectValue.optLong("sizeBytes", 0L),
+                    dateModifiedMs = objectValue.optLong("dateModifiedMs", 0L),
+                    relativePath = objectValue.optString("relativePath", null),
+                    mimeType = objectValue.optString("mimeType", null),
                     lastPositionMs = objectValue.optLong("lastPositionMs", 0L),
                     lastPlayedAtMs = objectValue.optLong("lastPlayedAtMs", 0L),
                     addedAtMs = objectValue.optLong("addedAtMs", System.currentTimeMillis())
@@ -87,6 +90,10 @@ class VideoLibrary(context: Context) {
                     put("uri", item.uri.toString())
                     put("title", item.title)
                     put("durationMs", item.durationMs)
+                    put("sizeBytes", item.sizeBytes)
+                    put("dateModifiedMs", item.dateModifiedMs)
+                    put("relativePath", item.relativePath)
+                    put("mimeType", item.mimeType)
                     put("lastPositionMs", item.lastPositionMs)
                     put("lastPlayedAtMs", item.lastPlayedAtMs)
                     put("addedAtMs", item.addedAtMs)
