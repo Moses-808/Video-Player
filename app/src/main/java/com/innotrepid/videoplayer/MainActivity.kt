@@ -30,7 +30,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -272,18 +274,53 @@ private fun LibraryScreen(
     onOpen: () -> Unit,
     onExportDiagnostics: () -> Unit
 ) {
-    val continueWatching = videos.filter { it.isResumeable }.sortedByDescending { it.lastPlayedAtMs }
-    val recentlyAdded = videos.sortedByDescending { it.addedAtMs }.take(12)
+    var query by remember { mutableStateOf("") }
+    var newestFirst by remember { mutableStateOf(true) }
+
+    val matchingVideos = videos.filter { video ->
+        query.isBlank() || video.title.contains(query.trim(), ignoreCase = true)
+    }
+    val orderedVideos = if (newestFirst) {
+        matchingVideos.sortedByDescending { it.addedAtMs }
+    } else {
+        matchingVideos.sortedBy { it.title.lowercase() }
+    }
+    val continueWatching = orderedVideos.filter { it.isResumeable }.sortedByDescending { it.lastPlayedAtMs }
+    val recentlyAdded = orderedVideos.take(12)
 
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Video Player", color = Color.White, style = MaterialTheme.typography.headlineMedium)
-                Text("Your local library", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (videos.isEmpty()) "Your local library" else "${videos.size} video${if (videos.size == 1) "" else "s"} on this device",
+                    color = Color.LightGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             if (hasMediaPermission) Button(onClick = onRefresh) { Text("Refresh") }
         }
         Spacer(Modifier.height(14.dp))
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("Search videos") },
+            label = { Text("Library search") }
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Sort", color = Color.LightGray, style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = { newestFirst = true }) { Text(if (newestFirst) "✓ Newest" else "Newest") }
+            TextButton(onClick = { newestFirst = false }) { Text(if (!newestFirst) "✓ A–Z" else "A–Z") }
+            Spacer(Modifier.weight(1f))
+            if (query.isNotBlank()) {
+                Text("${orderedVideos.size} match${if (orderedVideos.size == 1) "" else "es"}", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
         if (!hasMediaPermission) {
             Text(
                 "Let Video Player find videos already stored on your device. The app indexes them; it does not copy the video files.",
@@ -302,25 +339,32 @@ private fun LibraryScreen(
         Spacer(Modifier.height(18.dp))
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            if (continueWatching.isNotEmpty()) {
+            if (continueWatching.isNotEmpty() && query.isBlank()) {
                 item { SectionTitle("Continue Watching") }
                 items(continueWatching, key = { "continue-${it.id}" }) { video ->
                     VideoCard(video, onVideoSelected)
                 }
             }
 
-            item { SectionTitle("Recently Added") }
+            item { SectionTitle(if (query.isBlank()) "Recently Added" else "Search Results") }
             if (recentlyAdded.isEmpty()) {
-                item { Text("No videos indexed yet.", color = Color.LightGray) }
+                item {
+                    Text(
+                        if (query.isBlank()) "No videos indexed yet." else "No videos match \"$query\".",
+                        color = Color.LightGray
+                    )
+                }
             } else {
                 items(recentlyAdded, key = { "recent-${it.id}" }) { video ->
                     VideoCard(video, onVideoSelected)
                 }
             }
 
-            item { SectionTitle("All Videos") }
-            items(videos, key = { "all-${it.id}" }) { video ->
-                VideoCard(video, onVideoSelected)
+            if (query.isBlank()) {
+                item { SectionTitle("All Videos") }
+                items(orderedVideos, key = { "all-${it.id}" }) { video ->
+                    VideoCard(video, onVideoSelected)
+                }
             }
         }
     }
@@ -350,6 +394,7 @@ private fun VideoCard(video: VideoItem, onClick: (VideoItem) -> Unit) {
                 when {
                     video.isResumeable -> Text("Resume at ${formatTime(video.lastPositionMs)}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                     video.lastPlayedAtMs > 0L -> Text("Watched before", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                    video.relativePath != null -> Text(video.relativePath.orEmpty(), color = Color.Gray, maxLines = 1, style = MaterialTheme.typography.bodySmall)
                 }
                 if (video.progress > 0f && video.isResumeable) {
                     Spacer(Modifier.height(7.dp))
