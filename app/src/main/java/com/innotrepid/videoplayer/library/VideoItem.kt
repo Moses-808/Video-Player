@@ -13,11 +13,19 @@ data class VideoItem(
     val mimeType: String? = null,
     val lastPositionMs: Long = 0L,
     val lastPlayedAtMs: Long = 0L,
-    val addedAtMs: Long = System.currentTimeMillis()
+    val addedAtMs: Long = System.currentTimeMillis(),
+    val isFavorite: Boolean = false
 ) {
     val progress: Float
         get() = if (durationMs > 0L) (lastPositionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
     val isResumeable: Boolean
         get() = lastPositionMs > 5_000L && durationMs > 0L && lastPositionMs < durationMs * 0.95f
+
+    val folderName: String?
+        get() = relativePath
+            ?.trimEnd('/')
+            ?.substringBeforeLast('/')
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() }
 }
