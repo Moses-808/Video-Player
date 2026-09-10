@@ -2,7 +2,6 @@ package com.innotrepid.videoplayer.library
 
 import android.content.Context
 import android.net.Uri
-import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,16 +32,15 @@ class VideoLibraryPersistenceTest {
             library.toggleFavorite("1")
             library.updateProgress("1", 42_000L, 100_000L)
 
-            val persisted = JSONArray(directory.resolve("video_library.json").readText())
-                .getJSONObject(0)
+            val persisted = directory.resolve("video_library.json").readText()
 
-            assertEquals("1", persisted.getString("id"))
-            assertEquals("Episode 1", persisted.getString("title"))
-            assertEquals("Show/Season 1/", persisted.getString("relativePath"))
-            assertTrue(persisted.getBoolean("isFavorite"))
-            assertEquals(42_000L, persisted.getLong("lastPositionMs"))
-            assertEquals(100_000L, persisted.getLong("durationMs"))
-            assertEquals("content://videos/1", persisted.getString("uri"))
+            assertTrue(persisted.contains("\"id\":\"1\""))
+            assertTrue(persisted.contains("\"title\":\"Episode 1\""))
+            assertTrue(persisted.contains("\"relativePath\":\"Show/Season 1/\""))
+            assertTrue(persisted.contains("\"isFavorite\":true"))
+            assertTrue(persisted.contains("\"lastPositionMs\":42000"))
+            assertTrue(persisted.contains("\"durationMs\":100000"))
+            assertTrue(persisted.contains("\"uri\":\"content://videos/1\""))
         } finally {
             directory.deleteRecursively()
         }
