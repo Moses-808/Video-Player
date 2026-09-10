@@ -27,8 +27,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -39,8 +41,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -50,6 +56,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
+import com.innotrepid.videoplayer.library.VideoThumbnailLoader
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,7 +65,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun VideoPlayerApp() {
     val context = LocalContext.current
     val libraryViewModel: VideoLibraryViewModel = viewModel()
@@ -147,7 +154,7 @@ private fun VideoPlayerApp() {
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun LibraryScreen(
     videos: List<VideoItem>,
     hasMediaPermission: Boolean,
@@ -156,44 +163,112 @@ private fun LibraryScreen(
     onVideoSelected: (VideoItem) -> Unit,
     onOpen: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(24.dp)) {
+    val continueWatching = videos.filter { it.isResumeable }.sortedByDescending { it.lastPlayedAtMs }
+    val recentlyAdded = videos.sortedByDescending { it.addedAtMs }.take(12)
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Video Library", Color.White, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("Video Player", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                Text("Your local library", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+            }
             if (hasMediaPermission) Button(onClick = onRefresh) { Text("Refresh") }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
         if (!hasMediaPermission) {
             Text("Let Video Player find videos already stored on your device. The app indexes them; it does not copy the video files.", Color.LightGray)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             Button(onClick = onRequestPermission) { Text("Find my videos") }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
         }
-        Button(onClick = onOpen, contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) { Text("Add video manually") }
-        Spacer(Modifier.height(24.dp))
-        if (videos.isEmpty()) {
-            Text("No videos indexed yet.", Color.LightGray)
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(videos, key = { it.id }) { video ->
-                    Card(Modifier.fillMaxWidth().clickable { onVideoSelected(video) }) {
-                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(video.title, style = MaterialTheme.typography.titleMedium)
-                                if (video.isResumeable) Text("Resume at ${formatTime(video.lastPositionMs)}", style = MaterialTheme.typography.bodySmall)
-                                else if (video.lastPlayedAtMs > 0L) Text("Watched before", style = MaterialTheme.typography.bodySmall)
-                            }
-                            if (video.durationMs > 0L) Text(formatTime(video.durationMs), style = MaterialTheme.typography.bodySmall)
-                        }
+        Button(onClick = onOpen, contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp)) { Text("Add video manually") }
+        Spacer(Modifier.height(18.dp))
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            if (continueWatching.isNotEmpty()) {
+                item { SectionTitle("Continue Watching") }
+                items(continueWatching, key = { "continue-${it.id}" }) { video ->
+                    VideoCard(video, onVideoSelected)
+                }
+            }
+
+            item { SectionTitle("Recently Added") }
+            if (recentlyAdded.isEmpty()) {
+                item { Text("No videos indexed yet.", color = Color.LightGray) }
+            } else {
+                items(recentlyAdded, key = { "recent-${it.id}" }) { video ->
+                    VideoCard(video, onVideoSelected)
+                }
+            }
+
+            item { SectionTitle("All Videos") }
+            items(videos, key = { "all-${it.id}" }) { video ->
+                VideoCard(video, onVideoSelected)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String) {
+    Text(title, color = Color.White, style = MaterialTheme.typography.titleLarge)
+}
+
+@Composable
+private fun VideoCard(video: VideoItem, onClick: (VideoItem) -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable { onClick(video) }) {
+        Column {
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                VideoThumbnail(video)
+                if (video.durationMs > 0L) {
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.75f)).padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
+                        Text(formatTime(video.durationMs), color = Color.White, fontSize = 12.sp)
                     }
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleMedium)
+                when {
+                    video.isResumeable -> Text("Resume at ${formatTime(video.lastPositionMs)}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                    video.lastPlayedAtMs > 0L -> Text("Watched before", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                }
+                if (video.progress > 0f && video.isResumeable) {
+                    Spacer(Modifier.height(7.dp))
+                    LinearProgressIndicator(progress = { video.progress }, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
+private fun VideoThumbnail(video: VideoItem) {
+    val context = LocalContext.current
+    var bitmap by remember(video.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    LaunchedEffect(video.id, video.uri) {
+        bitmap = VideoThumbnailLoader.load(context, video.uri, 640, 360)
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = video.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    } else {
+        Box(Modifier.fillMaxSize().background(Color.DarkGray), contentAlignment = Alignment.Center) {
+            Text("VIDEO", color = Color.LightGray, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
 private fun PlayerScreen(video: VideoItem, player: ExoPlayer, onBack: () -> Unit, onOpen: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Color.Black)) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = onBack) { Text("Library") }
             Spacer(Modifier.width(12.dp))
