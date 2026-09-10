@@ -40,8 +40,8 @@ fun GroupedLibraryRoot(
     setSearch: (String) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
-    initialFolder: String? = null,
-    add: () -> Unit
+    add: () -> Unit,
+    initialFolder: String? = null
 ) {
     var openedFolder by remember(initialFolder) { mutableStateOf(initialFolder) }
     val groups = remember(videos, search) {
