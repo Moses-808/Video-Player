@@ -51,9 +51,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.innotrepid.videoplayer.intelligence.MomentumEvent
+import com.innotrepid.videoplayer.intelligence.MomentumEventRecorder
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
 import com.innotrepid.videoplayer.library.VideoThumbnailLoader
@@ -72,6 +75,7 @@ private fun VideoPlayerApp() {
     val videos by libraryViewModel.videos.collectAsState()
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var hasMediaPermission by remember { mutableStateOf(hasVideoPermission(context)) }
+    val eventRecorder = remember { MomentumEventRecorder(context.applicationContext) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -107,19 +111,74 @@ private fun VideoPlayerApp() {
     DisposableEffect(player) { onDispose { player.release() } }
 
     DisposableEffect(player, selectedVideo?.id) {
+        var hasStarted = false
+        var lastPositionMs = selectedVideo?.lastPositionMs ?: 0L
         val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                val video = selectedVideo ?: return
+                val position = player.currentPosition.coerceAtLeast(0L)
+                if (isPlaying) {
+                    eventRecorder.emit(
+                        if (hasStarted) MomentumEvent.VideoResumed(video.id, position, System.currentTimeMillis())
+                        else MomentumEvent.VideoStarted(video.id, position, System.currentTimeMillis())
+                    )
+                    hasStarted = true
+                } else if (hasStarted && player.playbackState != Player.STATE_ENDED) {
+                    eventRecorder.emit(MomentumEvent.VideoPaused(video.id, position, System.currentTimeMillis()))
+                }
+                lastPositionMs = position
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (reason != Player.DISCONTINUITY_REASON_SEEK) return
+                val video = selectedVideo ?: return
+                val from = oldPosition.positionMs.coerceAtLeast(0L)
+                val to = newPosition.positionMs.coerceAtLeast(0L)
+                if (kotlin.math.abs(to - from) >= 1_000L) {
+                    eventRecorder.emit(MomentumEvent.VideoSeeked(video.id, from, to, System.currentTimeMillis()))
+                }
+                lastPositionMs = to
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 val video = selectedVideo ?: return
                 if (state == Player.STATE_READY && player.duration > 0L) {
                     libraryViewModel.updateProgress(video.id, player.currentPosition, player.duration)
                 }
-                if (state == Player.STATE_ENDED) libraryViewModel.markCompleted(video.id)
+                if (state == Player.STATE_ENDED) {
+                    eventRecorder.emit(MomentumEvent.VideoCompleted(video.id, player.duration.coerceAtLeast(0L), System.currentTimeMillis()))
+                    libraryViewModel.markCompleted(video.id)
+                }
+                lastPositionMs = player.currentPosition.coerceAtLeast(lastPositionMs)
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                val video = selectedVideo ?: return
+                eventRecorder.emit(
+                    MomentumEvent.VideoError(
+                        mediaId = video.id,
+                        positionMs = player.currentPosition.coerceAtLeast(0L),
+                        message = error.errorCodeName,
+                        timestampMs = System.currentTimeMillis()
+                    )
+                )
             }
         }
         player.addListener(listener)
         onDispose {
             selectedVideo?.let { video ->
-                if (player.duration > 0L) libraryViewModel.updateProgress(video.id, player.currentPosition, player.duration)
+                val position = player.currentPosition.coerceAtLeast(0L)
+                val duration = player.duration
+                if (duration > 0L) {
+                    libraryViewModel.updateProgress(video.id, position, duration)
+                    if (hasStarted && position > 5_000L && position < duration * 0.95f) {
+                        eventRecorder.emit(MomentumEvent.VideoSkipped(video.id, position, duration, System.currentTimeMillis()))
+                    }
+                }
             }
             player.removeListener(listener)
         }
