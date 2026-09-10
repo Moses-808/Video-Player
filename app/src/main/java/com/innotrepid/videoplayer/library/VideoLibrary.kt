@@ -11,9 +11,7 @@ class VideoLibrary(context: Context) {
     private val file = File(context.filesDir, "video_library.json")
     private val items = LinkedHashMap<String, VideoItem>()
 
-    init {
-        load()
-    }
+    init { load() }
 
     @Synchronized
     fun all(): List<VideoItem> = items.values.sortedWith(
@@ -21,18 +19,18 @@ class VideoLibrary(context: Context) {
             .thenByDescending { it.addedAtMs }
     )
 
-    @Synchronized
-    fun find(id: String): VideoItem? = items[id]
+    @Synchronized fun find(id: String): VideoItem? = items[id]
 
     @Synchronized
-    fun upsert(item: VideoItem) {
-        items[item.id] = item
-        save()
-    }
+    fun upsert(item: VideoItem) { items[item.id] = item; save() }
 
     @Synchronized
-    fun remove(id: String) {
-        items.remove(id)
+    fun remove(id: String) { items.remove(id); save() }
+
+    @Synchronized
+    fun toggleFavorite(id: String) {
+        val current = items[id] ?: return
+        items[id] = current.copy(isFavorite = !current.isFavorite)
         save()
     }
 
@@ -50,10 +48,7 @@ class VideoLibrary(context: Context) {
     @Synchronized
     fun markCompleted(id: String) {
         val current = items[id] ?: return
-        items[id] = current.copy(
-            lastPositionMs = 0L,
-            lastPlayedAtMs = System.currentTimeMillis()
-        )
+        items[id] = current.copy(lastPositionMs = 0L, lastPlayedAtMs = System.currentTimeMillis())
         save()
     }
 
@@ -62,19 +57,20 @@ class VideoLibrary(context: Context) {
         runCatching {
             val array = JSONArray(file.readText())
             for (index in 0 until array.length()) {
-                val objectValue = array.getJSONObject(index)
+                val value = array.getJSONObject(index)
                 val item = VideoItem(
-                    id = objectValue.getString("id"),
-                    uri = Uri.parse(objectValue.getString("uri")),
-                    title = objectValue.optString("title", "Untitled video"),
-                    durationMs = objectValue.optLong("durationMs", 0L),
-                    sizeBytes = objectValue.optLong("sizeBytes", 0L),
-                    dateModifiedMs = objectValue.optLong("dateModifiedMs", 0L),
-                    relativePath = objectValue.optString("relativePath", null),
-                    mimeType = objectValue.optString("mimeType", null),
-                    lastPositionMs = objectValue.optLong("lastPositionMs", 0L),
-                    lastPlayedAtMs = objectValue.optLong("lastPlayedAtMs", 0L),
-                    addedAtMs = objectValue.optLong("addedAtMs", System.currentTimeMillis())
+                    id = value.getString("id"),
+                    uri = Uri.parse(value.getString("uri")),
+                    title = value.optString("title", "Untitled video"),
+                    durationMs = value.optLong("durationMs", 0L),
+                    sizeBytes = value.optLong("sizeBytes", 0L),
+                    dateModifiedMs = value.optLong("dateModifiedMs", 0L),
+                    relativePath = value.optString("relativePath", null),
+                    mimeType = value.optString("mimeType", null),
+                    lastPositionMs = value.optLong("lastPositionMs", 0L),
+                    lastPlayedAtMs = value.optLong("lastPlayedAtMs", 0L),
+                    addedAtMs = value.optLong("addedAtMs", System.currentTimeMillis()),
+                    isFavorite = value.optBoolean("isFavorite", false)
                 )
                 items[item.id] = item
             }
@@ -97,6 +93,7 @@ class VideoLibrary(context: Context) {
                     put("lastPositionMs", item.lastPositionMs)
                     put("lastPlayedAtMs", item.lastPlayedAtMs)
                     put("addedAtMs", item.addedAtMs)
+                    put("isFavorite", item.isFavorite)
                 })
             }
             file.writeText(array.toString())
