@@ -7,6 +7,10 @@ data class VideoItem(
     val uri: Uri,
     val title: String,
     val durationMs: Long = 0L,
+    val sizeBytes: Long = 0L,
+    val dateModifiedMs: Long = 0L,
+    val relativePath: String? = null,
+    val mimeType: String? = null,
     val lastPositionMs: Long = 0L,
     val lastPlayedAtMs: Long = 0L,
     val addedAtMs: Long = System.currentTimeMillis()
