@@ -16,7 +16,7 @@ class VideoSessionQueueTest {
     )
 
     @Test
-    fun ordersEpisodesNaturallyAndKeepsFolderBoundaries() {
+    fun ordersEpisodesNaturallyAndStaysWithinSelectedFolder() {
         val queue = VideoSessionQueue.create(
             listOf(
                 video("3", "Episode 10", "Show"),
@@ -30,7 +30,7 @@ class VideoSessionQueueTest {
         assertEquals("Episode 2", queue.current!!.title)
         assertEquals("Episode 10", queue.next!!.title)
         assertEquals("Episode 1", queue.previous!!.title)
-        assertEquals(listOf("Episode 10", "Bonus"), queue.remaining.map { it.title })
+        assertEquals(listOf("Episode 10"), queue.remaining.map { it.title })
     }
 
     @Test
