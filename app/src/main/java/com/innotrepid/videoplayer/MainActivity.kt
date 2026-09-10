@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -60,6 +62,12 @@ import com.innotrepid.videoplayer.intelligence.MomentumEventRecorder
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
 import com.innotrepid.videoplayer.library.VideoThumbnailLoader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,6 +84,7 @@ private fun VideoPlayerApp() {
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
     var hasMediaPermission by remember { mutableStateOf(hasVideoPermission(context)) }
     val eventRecorder = remember { MomentumEventRecorder(context.applicationContext) }
+    val coroutineScope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -108,15 +117,31 @@ private fun VideoPlayerApp() {
         }
     }
 
-    DisposableEffect(player) { onDispose { player.release() } }
+    LaunchedEffect(selectedVideo?.id) {
+        while (isActive && selectedVideo != null) {
+            delay(10_000L)
+            val video = selectedVideo ?: break
+            if (player.isPlaying && player.duration > 0L) {
+                libraryViewModel.updateProgress(video.id, player.currentPosition, player.duration)
+            }
+        }
+    }
+
+    DisposableEffect(player) {
+        onDispose {
+            player.release()
+            eventRecorder.shutdown()
+        }
+    }
 
     DisposableEffect(player, selectedVideo?.id) {
         var hasStarted = false
-        var lastPositionMs = selectedVideo?.lastPositionMs ?: 0L
+        var completed = false
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 val video = selectedVideo ?: return
                 val position = player.currentPosition.coerceAtLeast(0L)
+                val duration = player.duration
                 if (isPlaying) {
                     eventRecorder.emit(
                         if (hasStarted) MomentumEvent.VideoResumed(video.id, position, System.currentTimeMillis())
@@ -125,8 +150,8 @@ private fun VideoPlayerApp() {
                     hasStarted = true
                 } else if (hasStarted && player.playbackState != Player.STATE_ENDED) {
                     eventRecorder.emit(MomentumEvent.VideoPaused(video.id, position, System.currentTimeMillis()))
+                    if (duration > 0L) libraryViewModel.updateProgress(video.id, position, duration)
                 }
-                lastPositionMs = position
             }
 
             override fun onPositionDiscontinuity(
@@ -138,10 +163,10 @@ private fun VideoPlayerApp() {
                 val video = selectedVideo ?: return
                 val from = oldPosition.positionMs.coerceAtLeast(0L)
                 val to = newPosition.positionMs.coerceAtLeast(0L)
-                if (kotlin.math.abs(to - from) >= 1_000L) {
+                if (abs(to - from) >= 1_000L) {
                     eventRecorder.emit(MomentumEvent.VideoSeeked(video.id, from, to, System.currentTimeMillis()))
+                    if (player.duration > 0L) libraryViewModel.updateProgress(video.id, to, player.duration)
                 }
-                lastPositionMs = to
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -149,20 +174,26 @@ private fun VideoPlayerApp() {
                 if (state == Player.STATE_READY && player.duration > 0L) {
                     libraryViewModel.updateProgress(video.id, player.currentPosition, player.duration)
                 }
-                if (state == Player.STATE_ENDED) {
+                if (state == Player.STATE_ENDED && !completed) {
+                    completed = true
                     eventRecorder.emit(MomentumEvent.VideoCompleted(video.id, player.duration.coerceAtLeast(0L), System.currentTimeMillis()))
                     libraryViewModel.markCompleted(video.id)
                 }
-                lastPositionMs = player.currentPosition.coerceAtLeast(lastPositionMs)
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 val video = selectedVideo ?: return
+                val cause = error.cause?.javaClass?.name
+                val message = buildString {
+                    append(error.errorCodeName)
+                    error.message?.takeIf { it.isNotBlank() }?.let { append(": ").append(it) }
+                    cause?.let { append(" [cause=").append(it).append(']') }
+                }
                 eventRecorder.emit(
                     MomentumEvent.VideoError(
                         mediaId = video.id,
                         positionMs = player.currentPosition.coerceAtLeast(0L),
-                        message = error.errorCodeName,
+                        message = message,
                         timestampMs = System.currentTimeMillis()
                     )
                 )
@@ -175,7 +206,7 @@ private fun VideoPlayerApp() {
                 val duration = player.duration
                 if (duration > 0L) {
                     libraryViewModel.updateProgress(video.id, position, duration)
-                    if (hasStarted && position > 5_000L && position < duration * 0.95f) {
+                    if (!completed && hasStarted && position > 5_000L && position < duration * 0.95f) {
                         eventRecorder.emit(MomentumEvent.VideoSkipped(video.id, position, duration, System.currentTimeMillis()))
                     }
                 }
@@ -200,7 +231,25 @@ private fun VideoPlayerApp() {
                     },
                     onRefresh = { if (hasMediaPermission) libraryViewModel.scanDevice() },
                     onVideoSelected = { selectedVideo = it },
-                    onOpen = { picker.launch(arrayOf("video/*")) }
+                    onOpen = { picker.launch(arrayOf("video/*")) },
+                    onExportDiagnostics = {
+                        coroutineScope.launch {
+                            val file = withContext(Dispatchers.IO) { eventRecorder.exportToCache() }
+                            if (file != null) {
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Export diagnostics"))
+                            }
+                        }
+                    }
                 )
             } else {
                 PlayerScreen(selectedVideo!!, player, {
@@ -220,7 +269,8 @@ private fun LibraryScreen(
     onRequestPermission: () -> Unit,
     onRefresh: () -> Unit,
     onVideoSelected: (VideoItem) -> Unit,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onExportDiagnostics: () -> Unit
 ) {
     val continueWatching = videos.filter { it.isResumeable }.sortedByDescending { it.lastPlayedAtMs }
     val recentlyAdded = videos.sortedByDescending { it.addedAtMs }.take(12)
@@ -243,7 +293,12 @@ private fun LibraryScreen(
             Button(onClick = onRequestPermission) { Text("Find my videos") }
             Spacer(Modifier.height(12.dp))
         }
-        Button(onClick = onOpen, contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp)) { Text("Add video manually") }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = onOpen, contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp)) {
+                Text("Add video manually")
+            }
+            Button(onClick = onExportDiagnostics) { Text("Export Diagnostics") }
+        }
         Spacer(Modifier.height(18.dp))
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(18.dp)) {
