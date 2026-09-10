@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,11 +38,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -114,7 +112,9 @@ private fun VideoPlayerApp() {
     var search by remember { mutableStateOf("") }
     var permission by remember { mutableStateOf(hasVideoPermission(context)) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
         permission = grants.values.any { it }
         if (permission) vm.scanDevice()
     }
@@ -126,14 +126,14 @@ private fun VideoPlayerApp() {
             vm.add(uri)
         }
     }
-    val saveLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/jsonl")) { uri ->
+    val saveLogsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/jsonl")
+    ) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
                 val text = recorder.exportText()
                 runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use { output ->
-                        output.write(text.toByteArray())
-                    }
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
                 }
             }
         }
@@ -147,11 +147,10 @@ private fun VideoPlayerApp() {
     val player = remember { ExoPlayer.Builder(context).build() }
 
     LaunchedEffect(selected?.id) {
-        selected?.let { video ->
-            player.setMediaItem(MediaItem.fromUri(video.uri), video.lastPositionMs)
-            player.prepare()
-            player.playWhenReady = true
-        }
+        val video = selected ?: return@LaunchedEffect
+        player.setMediaItem(MediaItem.fromUri(video.uri), video.lastPositionMs.coerceAtLeast(0L))
+        player.prepare()
+        player.playWhenReady = true
     }
 
     LaunchedEffect(selected?.id) {
@@ -187,9 +186,7 @@ private fun VideoPlayerApp() {
                     started = true
                 } else if (started && player.playbackState != Player.STATE_ENDED) {
                     recorder.emit(MomentumEvent.VideoPaused(video.id, position, now))
-                    if (player.duration > 0L) {
-                        vm.updateProgress(video.id, position, player.duration)
-                    }
+                    if (player.duration > 0L) vm.updateProgress(video.id, position, player.duration)
                 }
             }
 
@@ -203,14 +200,7 @@ private fun VideoPlayerApp() {
                     val from = oldPosition.positionMs.coerceAtLeast(0L)
                     val to = newPosition.positionMs.coerceAtLeast(0L)
                     if (abs(to - from) >= 1_000L) {
-                        recorder.emit(
-                            MomentumEvent.VideoSeeked(
-                                video.id,
-                                from,
-                                to,
-                                System.currentTimeMillis()
-                            )
-                        )
+                        recorder.emit(MomentumEvent.VideoSeeked(video.id, from, to, System.currentTimeMillis()))
                     }
                 }
             }
@@ -222,13 +212,7 @@ private fun VideoPlayerApp() {
                 }
                 if (state == Player.STATE_ENDED && !completed) {
                     completed = true
-                    recorder.emit(
-                        MomentumEvent.VideoCompleted(
-                            video.id,
-                            player.duration.coerceAtLeast(0L),
-                            System.currentTimeMillis()
-                        )
-                    )
+                    recorder.emit(MomentumEvent.VideoCompleted(video.id, player.duration.coerceAtLeast(0L), System.currentTimeMillis()))
                     vm.markCompleted(video.id)
                 }
             }
@@ -246,7 +230,6 @@ private fun VideoPlayerApp() {
                 }
             }
         }
-
         player.addListener(listener)
         onDispose {
             selected?.let { video ->
@@ -255,14 +238,7 @@ private fun VideoPlayerApp() {
                 if (duration > 0L) {
                     vm.updateProgress(video.id, position, duration)
                     if (!completed && started && position > 5_000L && position < duration * 0.95f) {
-                        recorder.emit(
-                            MomentumEvent.VideoSkipped(
-                                video.id,
-                                position,
-                                duration,
-                                System.currentTimeMillis()
-                            )
-                        )
+                        recorder.emit(MomentumEvent.VideoSkipped(video.id, position, duration, System.currentTimeMillis()))
                     }
                 }
             }
@@ -286,23 +262,22 @@ private fun VideoPlayerApp() {
     }
 
     val order = listOf(AppScreen.HOME, AppScreen.LIBRARY, AppScreen.SAVED, AppScreen.SETTINGS)
-    val move = order.indexOf(screen) - order.indexOf(previousScreen)
+    val direction = if (order.indexOf(screen) >= order.indexOf(previousScreen)) 1 else -1
     val colors = if (lightMode) lightColorScheme() else darkColorScheme()
 
     MaterialTheme(colorScheme = colors) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(
+            Box(
                 Modifier
                     .fillMaxSize()
                     .pointerInput(screen) {
                         detectHorizontalDragGestures { _, dragAmount ->
-                            if (abs(dragAmount) > 80f) {
+                            if (abs(dragAmount) > 100f) {
                                 val index = order.indexOf(screen)
-                                val nextIndex = (index + if (dragAmount < 0f) 1 else -1)
-                                    .coerceIn(0, order.lastIndex)
-                                if (nextIndex != index) {
+                                val next = (index + if (dragAmount < 0f) 1 else -1).coerceIn(0, order.lastIndex)
+                                if (next != index) {
                                     previousScreen = screen
-                                    screen = order[nextIndex]
+                                    screen = order[next]
                                 }
                             }
                         }
@@ -311,14 +286,14 @@ private fun VideoPlayerApp() {
                 AnimatedContent(
                     targetState = screen,
                     transitionSpec = {
-                        val forward = move >= 0
+                        val forward = direction > 0
                         (slideInHorizontally { if (forward) it else -it } + fadeIn()) togetherWith
                             (slideOutHorizontally { if (forward) -it else it } + fadeOut())
                     },
-                    label = "screen_swipe",
-                    modifier = Modifier.weight(1f)
-                ) { targetScreen ->
-                    when (targetScreen) {
+                    label = "screen_transition",
+                    modifier = Modifier.fillMaxSize()
+                ) { target ->
+                    when (target) {
                         AppScreen.HOME -> HomeScreen(
                             videos = videos,
                             permission = permission,
@@ -356,28 +331,29 @@ private fun VideoPlayerApp() {
                             add = { picker.launch(arrayOf("video/*")) },
                             saveLogs = { saveLogsLauncher.launch("video-player-diagnostics.jsonl") },
                             clearLogs = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) { recorder.clear() }
-                                }
+                                scope.launch(Dispatchers.IO) { recorder.clear() }
                             }
                         )
                     }
                 }
 
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    NavigationItem("Home", screen == AppScreen.HOME) {
+                NavigationBar(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    NavigationButton("Home", screen == AppScreen.HOME) {
                         previousScreen = screen
                         screen = AppScreen.HOME
                     }
-                    NavigationItem("Library", screen == AppScreen.LIBRARY) {
+                    NavigationButton("Library", screen == AppScreen.LIBRARY) {
                         previousScreen = screen
                         screen = AppScreen.LIBRARY
                     }
-                    NavigationItem("Saved", screen == AppScreen.SAVED) {
+                    NavigationButton("Saved", screen == AppScreen.SAVED) {
                         previousScreen = screen
                         screen = AppScreen.SAVED
                     }
-                    NavigationItem("Settings", screen == AppScreen.SETTINGS) {
+                    NavigationButton("Settings", screen == AppScreen.SETTINGS) {
                         previousScreen = screen
                         screen = AppScreen.SETTINGS
                     }
@@ -388,13 +364,13 @@ private fun VideoPlayerApp() {
 }
 
 @Composable
-private fun NavigationItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    NavigationBarItem(
-        selected = selected,
-        onClick = onClick,
-        icon = { Text(if (selected) "●" else "○") },
-        label = { Text(label) }
-    )
+private fun NavigationButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text(
+            text = if (selected) "●  $label" else "○  $label",
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 @Composable
@@ -409,24 +385,14 @@ private fun HomeScreen(
 ) {
     val resume = videos.filter { it.isResumeable }.sortedByDescending { it.lastPlayedAtMs }
     val recent = videos.filter { it.lastPlayedAtMs > 0L }.sortedByDescending { it.lastPlayedAtMs }.take(10)
-    val folders = videos
-        .mapNotNull { it.folderName }
-        .groupingBy { it }
-        .eachCount()
-        .toList()
-        .sortedByDescending { it.second }
+    val folders = videos.mapNotNull { it.folderName }.groupingBy { it }.eachCount()
+        .toList().sortedByDescending { it.second }
 
     LazyColumn(
-        contentPadding = PaddingValues(bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp)
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        item {
-            Hero(
-                title = "A video space that moves with you",
-                subtitle = if (resume.isNotEmpty()) "Pick up where you left off." else "Your local library, organized around how you watch.",
-                action = add
-            )
-        }
+        item { Hero(add) }
         if (!permission) {
             item {
                 SettingCard(
@@ -437,31 +403,36 @@ private fun HomeScreen(
                 )
             }
         }
-        if (resume.isNotEmpty()) {
-            item { Rail("Continue Watching", resume, open, favorite) }
-        }
-        if (folders.isNotEmpty()) {
-            item { FolderRail(folders, openFolder) }
-        }
-        if (recent.isNotEmpty()) {
-            item { Rail("Recently Watched", recent, open, favorite) }
-        }
+        if (resume.isNotEmpty()) item { Rail("Continue Watching", resume, open, favorite) }
+        if (folders.isNotEmpty()) item { FolderRail(folders, openFolder) }
+        if (recent.isNotEmpty()) item { Rail("Recently Watched", recent, open, favorite) }
         item { SectionTitle("Your feed", "A visual stream through your library") }
-        itemsIndexed(
-            items = videos.take(20),
-            key = { _, video -> "feed-${video.id}" }
-        ) { index, video ->
+        itemsIndexed(videos.take(20), key = { _, video -> "feed-${video.id}" }) { index, video ->
             FeedCard(index + 1, video, open, favorite)
         }
         if (videos.isEmpty()) {
             item {
-                SettingCard(
-                    title = "Nothing here yet",
-                    body = "Add a local video to start building your space.",
-                    action = "Add video",
-                    onClick = add
-                )
+                SettingCard("Nothing here yet", "Add a local video to start building your space.", "Add video", add)
             }
+        }
+    }
+}
+
+@Composable
+private fun Hero(add: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(Modifier.padding(24.dp)) {
+            Text("YOUR VIDEO SPACE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(10.dp))
+            Text("A video space that moves with you", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(8.dp))
+            Text("Your local library, organized around how you watch.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(18.dp))
+            Button(onClick = add) { Text("Add video") }
         }
     }
 }
@@ -475,68 +446,172 @@ private fun LibraryScreen(
     favorite: (String) -> Unit,
     add: () -> Unit
 ) {
-    val filtered = videos
-        .filter { video ->
-            search.isBlank() ||
-                video.title.contains(search, ignoreCase = true) ||
-                video.folderName?.contains(search, ignoreCase = true) == true
-        }
-        .sortedBy { it.title.lowercase() }
+    val filtered = videos.filter { video ->
+        search.isBlank() || video.title.contains(search, true) || video.folderName?.contains(search, true) == true
+    }.sortedBy { it.title.lowercase() }
 
     LazyColumn(
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item { Text("Library", style = MaterialTheme.typography.headlineMedium) }
         item {
-            OutlinedTextField(
-                value = search,
-                onValueChange = setSearch,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Search titles and folders") }
-            )
-        }
-        if (search.isNotBlank()) {
-            item {
-                Text(
-                    "${filtered.size} result${if (filtered.size == 1) "" else "s"}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Text("Library", style = MaterialTheme.typography.headlineMedium)
+                Text("${filtered.size} video${if (filtered.size == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = setSearch,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Search titles and folders") }
                 )
             }
         }
-        items(
-            items = filtered,
-            key = { video -> "lib-${video.id}" }
-        ) { video ->
-            FeedCard(0, video, open, favorite)
+        if (search.isNotBlank()) {
+            item { Text("Search results", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 20.dp)) }
         }
-        item { Button(onClick = add) { Text("Add video") } }
+        items(filtered, key = { it.id }) { video ->
+            LibraryCard(video, open, favorite)
+        }
+        if (filtered.isEmpty()) {
+            item { SettingCard("No matching videos", "Try another title or folder, or add a video manually.", "Add video", add) }
+        }
     }
 }
 
 @Composable
-private fun SavedScreen(
-    videos: List<VideoItem>,
-    open: (VideoItem) -> Unit,
-    favorite: (String) -> Unit
-) {
+private fun LibraryCard(video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clickable { open(video) }, RoundedCornerShape(18.dp)) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(140.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))) { Thumbnail(video) }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleMedium)
+                video.folderName?.let { Text(it, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (video.isResumeable) {
+                    Spacer(Modifier.height(5.dp))
+                    Text("Resume ${formatTime(video.lastPositionMs)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            TextButton(onClick = { favorite(video.id) }) { Text(if (video.isFavorite) "★" else "☆", fontSize = 22.sp) }
+        }
+    }
+}
+
+@Composable
+private fun SavedScreen(videos: List<VideoItem>, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
     LazyColumn(
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item { SectionTitle("Saved", "Your personal shelf") }
-        if (videos.isEmpty()) {
-            item {
-                Text(
-                    "Save videos with ☆ and they will appear here.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Text("Saved", style = MaterialTheme.typography.headlineMedium)
+                Text("Videos you chose to keep close.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        items(videos, key = { video -> "saved-${video.id}" }) { video ->
-            FeedCard(0, video, open, favorite)
+        items(videos, key = { it.id }) { video -> LibraryCard(video, open, favorite) }
+        if (videos.isEmpty()) item { SettingCard("Nothing saved", "Favorite videos and they will appear here.", "Go to Library", {}) }
+    }
+}
+
+@Composable
+private fun Rail(title: String, videos: List<VideoItem>, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
+    Column {
+        SectionTitle(title)
+        Spacer(Modifier.height(10.dp))
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(videos, key = { it.id }) { video -> RailCard(video, open, favorite) }
+        }
+    }
+}
+
+@Composable
+private fun FolderRail(folders: List<Pair<String, Int>>, open: (String) -> Unit) {
+    Column {
+        SectionTitle("Series & Folders", "Episodes stay together")
+        Spacer(Modifier.height(10.dp))
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(folders, key = { "folder-${it.first}" }) { folder ->
+                val name = folder.first
+                val count = folder.second
+                Surface(
+                    Modifier.width(190.dp).clickable { open(name) },
+                    RoundedCornerShape(16.dp),
+                    MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("SERIES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(8.dp))
+                        Text(name, maxLines = 2, style = MaterialTheme.typography.titleMedium)
+                        Text("$count episode${if (count == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailCard(video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
+    Column(Modifier.width(220.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).clickable { open(video) }) {
+            Thumbnail(video)
+            TextButton(onClick = { favorite(video.id) }, modifier = Modifier.align(Alignment.TopEnd)) {
+                Text(if (video.isFavorite) "★" else "☆", color = Color.White, fontSize = 22.sp)
+            }
+            if (video.isResumeable) LinearProgressIndicator({ video.progress }, Modifier.align(Alignment.BottomStart).fillMaxWidth())
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleSmall)
+        video.folderName?.let { Text(it, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun FeedCard(index: Int, video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clickable { open(video) }, RoundedCornerShape(20.dp)) {
+        Column {
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                Thumbnail(video)
+                Text("#%02d".format(index), color = Color.White, modifier = Modifier.align(Alignment.TopStart).padding(10.dp))
+                TextButton(onClick = { favorite(video.id) }, modifier = Modifier.align(Alignment.TopEnd)) {
+                    Text(if (video.isFavorite) "★" else "☆", color = Color.White, fontSize = 24.sp)
+                }
+                if (video.durationMs > 0L) {
+                    Surface(Modifier.align(Alignment.BottomEnd).padding(10.dp), color = Color.Black.copy(alpha = .75f), shape = RoundedCornerShape(6.dp)) {
+                        Text(formatTime(video.durationMs), color = Color.White, modifier = Modifier.padding(6.dp), fontSize = 11.sp)
+                    }
+                }
+            }
+            Column(Modifier.padding(14.dp)) {
+                Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    video.folderName?.let { Text(it, Modifier.weight(1f), maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                    if (video.isResumeable) Text("Resume ${formatTime(video.lastPositionMs)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                if (video.isResumeable) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator({ video.progress }, Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Thumbnail(video: VideoItem) {
+    val context = LocalContext.current
+    var bitmap by remember(video.id, video.uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(video.id, video.uri) {
+        bitmap = VideoThumbnailLoader.load(context, video.uri, 640, 360)
+    }
+    if (bitmap != null) {
+        Image(bitmap!!.asImageBitmap(), video.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+    } else {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+            Text("VIDEO", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -551,280 +626,53 @@ private fun SettingsScreen(
     saveLogs: () -> Unit,
     clearLogs: () -> Unit
 ) {
-    LazyColumn(
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item { Text("Settings", style = MaterialTheme.typography.headlineMedium) }
-        item { Text("Make the player feel like yours.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    LazyColumn(contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            SettingRow("Appearance", if (light) "Light" else "Dark", light) { setLight(!light) }
-        }
-        item {
-            SettingCard(
-                "Device library",
-                if (permission) "Connected and ready to scan." else "Permission is needed to discover local videos.",
-                if (permission) "Refresh" else "Allow",
-                requestPermission
-            )
-        }
-        item {
-            SettingCard(
-                "Add videos manually",
-                "Choose individual videos outside the indexed library.",
-                "Choose video",
-                add
-            )
-        }
-        item { Divider() }
-        item { Text("Diagnostics", style = MaterialTheme.typography.titleLarge) }
-        item {
-            Text(
-                "Playback logs stay on this device. Save a copy whenever you need to inspect behavior or send it for debugging.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        item {
-            SettingCard(
-                "Save logs locally",
-                "Create a JSONL file in a location you choose, including the current playback history.",
-                "Save logs",
-                saveLogs
-            )
-        }
-        item { TextButton(onClick = clearLogs) { Text("Clear local playback logs") } }
-        item {
-            Text(
-                "Logs contain playback metadata and errors, not video files.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun Hero(title: String, subtitle: String, action: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Column(Modifier.padding(24.dp)) {
-            Text("VIBE / NOW", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
-            Text(title, style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(6.dp))
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = action) { Text("Add video") }
-        }
-    }
-}
-
-@Composable
-private fun Rail(
-    title: String,
-    videos: List<VideoItem>,
-    open: (VideoItem) -> Unit,
-    favorite: (String) -> Unit
-) {
-    Column {
-        SectionTitle(title)
-        Spacer(Modifier.height(10.dp))
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(videos, key = { video -> "rail-${video.id}" }) { video ->
-                RailCard(video, open, favorite)
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Text("Settings", style = MaterialTheme.typography.headlineMedium)
+                Text("Playback, library and diagnostics", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-    }
-}
-
-@Composable
-private fun FolderRail(folders: List<Pair<String, Int>>, open: (String) -> Unit) {
-    Column {
-        SectionTitle("Series & Folders", "Episodes stay together by their device folder")
-        Spacer(Modifier.height(10.dp))
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(
-                items = folders,
-                key = { folder -> "folder-${folder.first}" }
-            ) { folder ->
-                val name = folder.first
-                val count = folder.second
-                Surface(
-                    modifier = Modifier.width(190.dp).clickable { open(name) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("SERIES", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
-                        Spacer(Modifier.height(8.dp))
-                        Text(name, maxLines = 2, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "$count episode${if (count == 1) "" else "s"}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+        item {
+            Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp), RoundedCornerShape(18.dp), MaterialTheme.colorScheme.surfaceVariant) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Light mode", style = MaterialTheme.typography.titleMedium)
+                        Text(if (light) "Light appearance" else "Dark appearance", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Switch(checked = light, onCheckedChange = setLight)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun RailCard(
-    video: VideoItem,
-    open: (VideoItem) -> Unit,
-    favorite: (String) -> Unit
-) {
-    Column(Modifier.width(220.dp)) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { open(video) }
-        ) {
-            Thumbnail(video)
-            Text(
-                if (video.isFavorite) "★" else "☆",
-                color = Color.White,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).clickable { favorite(video.id) },
-                fontSize = 22.sp
-            )
-            if (video.progress > 0f && video.isResumeable) {
-                LinearProgressIndicator(
-                    progress = { video.progress },
-                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp)
-                )
-            }
-        }
-        Spacer(Modifier.height(7.dp))
-        Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleSmall)
-        video.folderName?.let { folder ->
-            Text(folder, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun FeedCard(
-    index: Int,
-    video: VideoItem,
-    open: (VideoItem) -> Unit,
-    favorite: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clickable { open(video) },
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column {
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                Thumbnail(video)
-                if (index > 0) {
-                    Text(
-                        "#%02d".format(index),
-                        color = Color.White,
-                        modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
-                    )
-                }
-                Text(
-                    if (video.isFavorite) "★" else "☆",
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).clickable { favorite(video.id) },
-                    fontSize = 24.sp
-                )
-                if (video.durationMs > 0L) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp),
-                        color = Color.Black.copy(alpha = .75f),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(formatTime(video.durationMs), color = Color.White, modifier = Modifier.padding(6.dp), fontSize = 11.sp)
-                    }
-                }
-            }
-            Column(Modifier.padding(14.dp)) {
-                Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleMedium)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    video.folderName?.let { folder ->
-                        Text(folder, color = MaterialTheme.colorScheme.onSurfaceVariant, Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (video.isResumeable) {
-                        Text("Resume ${formatTime(video.lastPositionMs)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (video.isResumeable) {
+        item { SettingCard("Device library", if (permission) "Connected and ready to scan." else "Permission is required to index local videos.", if (permission) "Rescan" else "Allow", requestPermission) }
+        item { SettingCard("Manual import", "Add a video through Android's document picker.", "Add video", add) }
+        item {
+            Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp), RoundedCornerShape(18.dp), MaterialTheme.colorScheme.surfaceVariant) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Diagnostics", style = MaterialTheme.typography.titleMedium)
+                    Text("Playback events are stored locally as metadata-only JSON Lines.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(progress = { video.progress }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = saveLogs) { Text("Save logs") }
+                        TextButton(onClick = clearLogs) { Text("Clear logs") }
+                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Thumbnail(video: VideoItem) {
-    val context = LocalContext.current
-    var bitmap by remember(video.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(video.id, video.uri) {
-        bitmap = VideoThumbnailLoader.load(context, video.uri, 640, 360)
-    }
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap!!.asImageBitmap(),
-            contentDescription = video.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-    } else {
-        Box(Modifier.fillMaxSize().background(Color.DarkGray), contentAlignment = Alignment.Center) {
-            Text("VIDEO", color = Color.LightGray)
-        }
+        item { HorizontalDivider(Modifier.padding(horizontal = 20.dp)) }
+        item { Text("Momentum-ready: playback starts, pauses, seeks, completions, skips and errors are recorded locally for future intelligence experiments.", Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
 @Composable
 private fun SettingCard(title: String, body: String, action: String, onClick: () -> Unit) {
-    Surface(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        RoundedCornerShape(18.dp),
-        MaterialTheme.colorScheme.surfaceVariant
-    ) {
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp), RoundedCornerShape(18.dp), MaterialTheme.colorScheme.surfaceVariant) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = onClick) { Text(action) }
-        }
-    }
-}
-
-@Composable
-private fun SettingRow(title: String, value: String, checked: Boolean, onClick: () -> Unit) {
-    Surface(
-        Modifier.fillMaxWidth(),
-        RoundedCornerShape(16.dp),
-        MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Row(
-            Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = checked, onCheckedChange = { onClick() })
         }
     }
 }
@@ -840,27 +688,22 @@ private fun SectionTitle(title: String, subtitle: String? = null) {
 @Composable
 private fun PlayerScreen(video: VideoItem, player: ExoPlayer, back: () -> Unit, add: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(onClick = back) { Text("Library") }
-            Spacer(Modifier.width(12.dp))
-            Text(video.title, color = Color.White, Modifier.weight(1f), maxLines = 1)
-            Button(onClick = add) { Text("Open") }
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = back) { Text("Back", color = Color.White) }
+            Spacer(Modifier.width(8.dp))
+            Text(video.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
+            TextButton(onClick = add) { Text("Open", color = Color.White) }
         }
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-            AndroidView(
-                factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        this.player = player
-                        useController = true
-                        controllerShowTimeoutMs = 3_000
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        AndroidView(
+            factory = { viewContext ->
+                PlayerView(viewContext).apply {
+                    this.player = player
+                    useController = true
+                    controllerShowTimeoutMs = 3_000
+                }
+            },
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+        )
     }
 }
 
@@ -879,7 +722,6 @@ private fun formatTime(ms: Long): String {
     val seconds = (ms / 1000L).coerceAtLeast(0L)
     val hours = seconds / 3600L
     val minutes = (seconds % 3600L) / 60L
-    val remaining = seconds % 60L
-    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, remaining)
-    else "%d:%02d".format(minutes, remaining)
+    val secs = seconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, secs) else "%d:%02d".format(minutes, secs)
 }
