@@ -1,6 +1,8 @@
 package com.innotrepid.videoplayer
 
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -35,6 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -70,6 +75,8 @@ fun VideoPlayerRoot() {
     var permission by remember { mutableStateOf(hasVideoPermission(context)) }
     val selected = videos.firstOrNull { it.id == selectedId }
     val player = remember { ExoPlayer.Builder(context).build() }
+    val latestSelected by rememberUpdatedState(selected)
+    val latestVideos by rememberUpdatedState(videos)
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         permission = grants.values.any { it }
@@ -106,7 +113,7 @@ fun VideoPlayerRoot() {
     LaunchedEffect(selectedId) {
         while (isActive && selectedId != null) {
             delay(8_000L)
-            val video = selected ?: break
+            val video = latestSelected ?: continue
             if (player.duration > 0L) vm.updateProgress(video.id, player.currentPosition, player.duration)
         }
     }
@@ -116,7 +123,7 @@ fun VideoPlayerRoot() {
         var completed = false
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                val video = selected ?: return
+                val video = latestSelected ?: return
                 val now = System.currentTimeMillis()
                 if (isPlaying) {
                     recorder.emit(if (started) MomentumEvent.VideoResumed(video.id, player.currentPosition, now) else MomentumEvent.VideoStarted(video.id, player.currentPosition, now))
@@ -128,29 +135,29 @@ fun VideoPlayerRoot() {
             }
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-                    val video = selected ?: return
+                    val video = latestSelected ?: return
                     val from = oldPosition.positionMs
                     val to = newPosition.positionMs
                     if (abs(to - from) >= 1000L) recorder.emit(MomentumEvent.VideoSeeked(video.id, from, to, System.currentTimeMillis()))
                 }
             }
             override fun onPlaybackStateChanged(state: Int) {
-                val video = selected ?: return
+                val video = latestSelected ?: return
                 if (state == Player.STATE_READY && player.duration > 0L) vm.updateProgress(video.id, player.currentPosition, player.duration)
                 if (state == Player.STATE_ENDED && !completed) {
                     completed = true
                     recorder.emit(MomentumEvent.VideoCompleted(video.id, player.duration.coerceAtLeast(0L), System.currentTimeMillis()))
                     vm.markCompleted(video.id)
-                    selectedId = nextVideo(videos, video.id)?.id
+                    selectedId = nextVideo(latestVideos, video.id)?.id
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                selected?.let { video -> recorder.emit(MomentumEvent.VideoError(video.id, player.currentPosition.coerceAtLeast(0L), "${error.errorCodeName}: ${error.message.orEmpty()} [cause=${error.cause?.javaClass?.name}]", System.currentTimeMillis())) }
+                latestSelected?.let { video -> recorder.emit(MomentumEvent.VideoError(video.id, player.currentPosition.coerceAtLeast(0L), "${error.errorCodeName}: ${error.message.orEmpty()} [cause=${error.cause?.javaClass?.name}]", System.currentTimeMillis())) }
             }
         }
         player.addListener(listener)
         onDispose {
-            selected?.let { video ->
+            latestSelected?.let { video ->
                 val duration = player.duration
                 if (duration > 0L) {
                     val position = player.currentPosition
@@ -162,18 +169,18 @@ fun VideoPlayerRoot() {
         }
     }
 
-    if (selected != null) {
-        PlayerExperience(selected, player, videos, { vm.toggleFavorite(selected.id) }, {
-            vm.updateProgress(selected.id, player.currentPosition, player.duration)
-            selectedId = null
-            player.stop()
-        }, { selectedId = it.id }, { picker.launch(arrayOf("video/*")) })
-        return
-    }
-
-    val order = RootScreen.entries
-    val direction = if (order.indexOf(screen) >= order.indexOf(previous)) 1 else -1
     MaterialTheme(colorScheme = if (lightMode) lightColorScheme() else darkColorScheme()) {
+        if (selected != null) {
+            PlayerExperience(selected, player, videos, { vm.toggleFavorite(selected.id) }, {
+                vm.updateProgress(selected.id, player.currentPosition, player.duration)
+                selectedId = null
+                player.stop()
+            }, { selectedId = it.id }, { picker.launch(arrayOf("video/*")) })
+            return@MaterialTheme
+        }
+
+        val order = RootScreen.entries
+        val direction = if (order.indexOf(screen) >= order.indexOf(previous)) 1 else -1
         Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().pointerInput(screen) {
                 detectHorizontalDragGestures { _, amount ->
@@ -207,36 +214,127 @@ fun VideoPlayerRoot() {
     }
 }
 
-private fun nextVideo(videos: List<VideoItem>, id: String): VideoItem? = videos.sortedBy { it.title.lowercase() }.let { list -> list.getOrNull(list.indexOfFirst { it.id == id } + 1) }
-private fun previousVideo(videos: List<VideoItem>, id: String): VideoItem? = videos.sortedBy { it.title.lowercase() }.let { list -> list.getOrNull(list.indexOfFirst { it.id == id } - 1) }
+private fun nextVideo(videos: List<VideoItem>, id: String): VideoItem? = videos.sortedWith(videoQueueComparator()).let { list -> list.getOrNull(list.indexOfFirst { it.id == id } + 1) }
+private fun previousVideo(videos: List<VideoItem>, id: String): VideoItem? = videos.sortedWith(videoQueueComparator()).let { list -> list.getOrNull(list.indexOfFirst { it.id == id } - 1) }
+private fun videoQueueComparator(): Comparator<VideoItem> = compareBy<VideoItem>({ it.folderName ?: "\uFFFF" }, { naturalVideoKey(it.title) }, { it.title.lowercase() })
+private fun naturalVideoKey(title: String): String = buildString {
+    Regex("\\d+").findAll(title.lowercase()).let { matches ->
+        var cursor = 0
+        matches.forEach { match ->
+            append(title.substring(cursor, match.range.first).lowercase())
+            append(match.value.toIntOrNull()?.toString()?.padStart(12, '0') ?: match.value)
+            cursor = match.range.last + 1
+        }
+        append(title.substring(cursor).lowercase())
+    }
+}
 
 @Composable private fun PlayerExperience(video: VideoItem, player: ExoPlayer, queue: List<VideoItem>, favorite: () -> Unit, back: () -> Unit, open: (VideoItem) -> Unit, add: () -> Unit) {
     val context = LocalContext.current
+    val activity = context.findActivity()
     val next = nextVideo(queue, video.id)
     val previous = previousVideo(queue, video.id)
+    var fullscreen by remember { mutableStateOf(false) }
+    var landscape by remember { mutableStateOf(false) }
+    var speed by remember { mutableFloatStateOf(1f) }
+    var showSpeedMenu by remember { mutableStateOf(false) }
+    var gestureOffset by remember { mutableLongStateOf(0L) }
+
+    DisposableEffect(fullscreen, landscape) {
+        val window = activity?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars()) else controller.show(WindowInsetsCompat.Type.systemBars())
+            activity.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        onDispose { }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.window?.let { window -> WindowCompat.getInsetsController(window, window.decorView).show(WindowInsetsCompat.Type.systemBars()) }
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = back) { Text("‹ Back") }
             Text(video.title, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f))
             TextButton(onClick = favorite) { Text(if (video.isFavorite) "★" else "☆", color = Color.White, fontSize = 24.sp) }
         }
-        AndroidView({ PlayerView(context).apply { this.player = player; useController = true; controllerShowTimeoutMs = 2500 } }, Modifier.fillMaxWidth().weight(1f))
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Box(Modifier.fillMaxWidth().weight(1f).pointerInput(video.id) {
+            detectHorizontalDragGestures(
+                onHorizontalDrag = { _, amount -> gestureOffset += (amount * -35L).toLong() },
+                onDragEnd = {
+                    if (abs(gestureOffset) >= 1000L) player.seekTo((player.currentPosition + gestureOffset).coerceIn(0L, player.duration.coerceAtLeast(0L)))
+                    gestureOffset = 0L
+                }
+            )
+        }) {
+            AndroidView({ PlayerView(context).apply {
+                this.player = player
+                useController = true
+                controllerShowTimeoutMs = 2500
+                controllerAutoShow = true
+                setShowPreviousButton(false)
+                setShowNextButton(false)
+            } }, Modifier.fillMaxSize())
+            if (gestureOffset != 0L) {
+                Surface(Modifier.align(Alignment.Center), RoundedCornerShape(16.dp), Color.Black.copy(alpha = .72f)) {
+                    Text(if (gestureOffset > 0) "+${formatDuration(abs(gestureOffset))}" else "−${formatDuration(abs(gestureOffset))}", color = Color.White, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { previous?.let(open) }, enabled = previous != null) { Text("Previous") }
                 TextButton(onClick = { player.seekBack() }) { Text("−10s") }
-                TextButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) { Text(if (player.isPlaying) "Pause" else "Play") }
+                FilledTonalButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) { Text(if (player.isPlaying) "Pause" else "Play") }
                 TextButton(onClick = { player.seekForward() }) { Text("+10s") }
                 TextButton(onClick = { next?.let(open) }, enabled = next != null) { Text("Next") }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AssistChip(onClick = { fullscreen = !fullscreen }, label = { Text(if (fullscreen) "Exit full screen" else "Full screen") })
+                AssistChip(onClick = { landscape = !landscape }, label = { Text(if (landscape) "Portrait" else "Landscape") })
+                Box {
+                    AssistChip(onClick = { showSpeedMenu = true }, label = { Text("${speed}x") })
+                    DropdownMenu(expanded = showSpeedMenu, onDismissRequest = { showSpeedMenu = false }) {
+                        listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { option ->
+                            DropdownMenuItem(text = { Text("${option}x") }, onClick = { speed = option; player.setPlaybackSpeed(option); showSpeedMenu = false })
+                        }
+                    }
+                }
+            }
             if (next != null) {
-                Text("Up next", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = .65f))
-                Text(next.title, color = Color.White, maxLines = 1)
+                Spacer(Modifier.height(10.dp))
+                Surface(Modifier.fillMaxWidth(), RoundedCornerShape(16.dp), Color.White.copy(alpha = .08f)) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Up next", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = .65f))
+                            Text(next.title, color = Color.White, maxLines = 1)
+                            next.folderName?.let { Text(it, color = Color.White.copy(alpha = .5f), fontSize = 12.sp) }
+                        }
+                        TextButton(onClick = { open(next) }) { Text("Play") }
+                    }
+                }
             }
             Spacer(Modifier.height(4.dp))
-            Text("Resume is saved automatically", color = Color.White.copy(alpha = .55f), fontSize = 12.sp)
+            Text("Swipe horizontally over the picture to seek", color = Color.White.copy(alpha = .55f), fontSize = 12.sp)
         }
     }
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = ms / 1000L
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+}
+
+private fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable private fun NavButton(label: String, selected: Boolean, click: () -> Unit) { TextButton(onClick = click) { Text(if (selected) "●  $label" else "○  $label", color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) } }
