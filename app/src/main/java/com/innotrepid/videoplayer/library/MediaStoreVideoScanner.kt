@@ -7,7 +7,6 @@ import android.provider.MediaStore
 
 /**
  * Discovers videos already present on the device without copying their bytes into the app.
- * MediaStore is the Android-safe equivalent of a lightweight VLC-style device index.
  */
 class MediaStoreVideoScanner(private val resolver: ContentResolver) {
     data class Result(
@@ -42,6 +41,13 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
             val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
             val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
             val addedIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+            val modifiedIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
+            val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+            val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
+            val relativePathIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                cursor.getColumnIndex(MediaStore.Video.Media.RELATIVE_PATH)
+            } else -1
+
             while (cursor.moveToNext()) {
                 val mediaId = cursor.getLong(idIndex)
                 val id = "media:$mediaId"
@@ -49,10 +55,28 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
                 val title = cursor.getString(nameIndex).orEmpty().ifBlank { "Untitled video" }
                 val duration = cursor.getLong(durationIndex).coerceAtLeast(0L)
                 val addedAt = cursor.getLong(addedIndex).coerceAtLeast(0L) * 1000L
+                val modifiedAt = cursor.getLong(modifiedIndex).coerceAtLeast(0L) * 1000L
+                val size = cursor.getLong(sizeIndex).coerceAtLeast(0L)
+                val mime = cursor.getString(mimeIndex)
+                val relativePath = if (relativePathIndex >= 0) cursor.getString(relativePathIndex) else null
                 val existing = library.find(id)
+
                 library.upsert(
-                    (existing ?: VideoItem(id = id, uri = uri, title = title, addedAtMs = addedAt))
-                        .copy(uri = uri, title = title, durationMs = duration, addedAtMs = addedAt.takeIf { it > 0L } ?: (existing?.addedAtMs ?: System.currentTimeMillis()))
+                    (existing ?: VideoItem(
+                        id = id,
+                        uri = uri,
+                        title = title,
+                        addedAtMs = addedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+                    )).copy(
+                        uri = uri,
+                        title = title,
+                        durationMs = duration,
+                        sizeBytes = size,
+                        dateModifiedMs = modifiedAt,
+                        relativePath = relativePath,
+                        mimeType = mime,
+                        addedAtMs = existing?.addedAtMs ?: (addedAt.takeIf { it > 0L } ?: System.currentTimeMillis())
+                    )
                 )
                 discoveredIds += id
                 discovered++
