@@ -33,12 +33,14 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
                 ?: "Untitled video"
             val id = uri.toString().hashCode().toString(16)
             val existing = library.find(id)
-            library.upsert(
-                (existing ?: VideoItem(id = id, uri = uri, title = title))
-                    .copy(uri = uri, title = title)
-            )
+            library.upsert((existing ?: VideoItem(id = id, uri = uri, title = title)).copy(uri = uri, title = title))
             _videos.value = library.all()
         }
+    }
+
+    fun toggleFavorite(id: String) {
+        library.toggleFavorite(id)
+        _videos.value = library.all()
     }
 
     fun updateProgress(id: String, positionMs: Long, durationMs: Long) {
