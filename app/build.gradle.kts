@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.aetherion.videoplayer"
+    namespace = "com.innotrepid.videoplayer"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.aetherion.videoplayer"
+        applicationId = "com.innotrepid.videoplayer"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     buildFeatures {
