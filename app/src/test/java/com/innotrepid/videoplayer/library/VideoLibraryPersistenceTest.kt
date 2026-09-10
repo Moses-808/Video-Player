@@ -2,16 +2,16 @@ package com.innotrepid.videoplayer.library
 
 import android.content.Context
 import android.net.Uri
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
-import java.io.File
 
 class VideoLibraryPersistenceTest {
     @Test
-    fun metadataSurvivesReloadAndPreservesFavoriteAndProgress() {
+    fun metadataIsPersistedWithFavoriteAndProgress() {
         val directory = createTempDir(prefix = "video-library-")
         try {
             val context = Mockito.mock(Context::class.java)
@@ -19,8 +19,8 @@ class VideoLibraryPersistenceTest {
             val uri = Mockito.mock(Uri::class.java)
             Mockito.`when`(uri.toString()).thenReturn("content://videos/1")
 
-            val first = VideoLibrary(context)
-            first.upsert(
+            val library = VideoLibrary(context)
+            library.upsert(
                 VideoItem(
                     id = "1",
                     uri = uri,
@@ -30,20 +30,19 @@ class VideoLibraryPersistenceTest {
                     isFavorite = false
                 )
             )
-            first.toggleFavorite("1")
-            first.updateProgress("1", 42_000L, 100_000L)
+            library.toggleFavorite("1")
+            library.updateProgress("1", 42_000L, 100_000L)
 
-            val reloaded = VideoLibrary(context)
-            val restored = reloaded.find("1")!!
+            val persisted = JSONArray(directory.resolve("video_library.json").readText())
+                .getJSONObject(0)
 
-            assertEquals("Episode 1", restored.title)
-            assertEquals("Show/Season 1/", restored.relativePath)
-            assertTrue(restored.isFavorite)
-            assertEquals(42_000L, restored.lastPositionMs)
-            assertEquals(100_000L, restored.durationMs)
-            // Android's local JVM Uri.parse() is a framework stub and cannot be
-            // relied on for value assertions here. URI serialization is covered
-            // by the store implementation and exercised on-device.
+            assertEquals("1", persisted.getString("id"))
+            assertEquals("Episode 1", persisted.getString("title"))
+            assertEquals("Show/Season 1/", persisted.getString("relativePath"))
+            assertTrue(persisted.getBoolean("isFavorite"))
+            assertEquals(42_000L, persisted.getLong("lastPositionMs"))
+            assertEquals(100_000L, persisted.getLong("durationMs"))
+            assertEquals("content://videos/1", persisted.getString("uri"))
         } finally {
             directory.deleteRecursively()
         }
