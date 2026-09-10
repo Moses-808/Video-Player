@@ -15,6 +15,12 @@ sealed interface MomentumEvent {
         override val timestampMs: Long
     ) : MomentumEvent
 
+    data class VideoResumed(
+        val mediaId: String,
+        val positionMs: Long,
+        override val timestampMs: Long
+    ) : MomentumEvent
+
     data class VideoPaused(
         val mediaId: String,
         val positionMs: Long,
@@ -38,6 +44,13 @@ sealed interface MomentumEvent {
         val mediaId: String,
         val positionMs: Long,
         val durationMs: Long,
+        override val timestampMs: Long
+    ) : MomentumEvent
+
+    data class VideoError(
+        val mediaId: String,
+        val positionMs: Long,
+        val message: String,
         override val timestampMs: Long
     ) : MomentumEvent
 }
