@@ -40,9 +40,10 @@ fun GroupedLibraryRoot(
     setSearch: (String) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
+    initialFolder: String? = null,
     add: () -> Unit
 ) {
-    var openedFolder by remember { mutableStateOf<String?>(null) }
+    var openedFolder by remember(initialFolder) { mutableStateOf(initialFolder) }
     val groups = remember(videos, search) {
         videos.filter { search.isBlank() || it.title.contains(search, true) || it.folderName?.contains(search, true) == true }
             .groupBy { it.folderName?.takeIf(String::isNotBlank) ?: "Unsorted" }
