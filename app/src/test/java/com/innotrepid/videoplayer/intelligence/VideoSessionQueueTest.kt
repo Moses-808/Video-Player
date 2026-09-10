@@ -3,7 +3,9 @@ package com.innotrepid.videoplayer.intelligence
 import android.net.Uri
 import com.innotrepid.videoplayer.library.VideoItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 
@@ -43,5 +45,24 @@ class VideoSessionQueueTest {
         assertEquals("C", moved.next!!.title)
         assertEquals("C", moved.advance()!!.current!!.title)
         assertNull(moved.advance()!!.next)
+    }
+
+    @Test
+    fun rejectsEmptyOrUnknownSessions() {
+        assertNull(VideoSessionQueue.create(emptyList(), "missing"))
+        assertNull(VideoSessionQueue.create(listOf(video("1", "A", "Show")), "missing"))
+    }
+
+    @Test
+    fun singleItemSessionHasNoNeighborsAndCannotAdvance() {
+        val queue = VideoSessionQueue.create(listOf(video("1", "Only", "Show")), "1")!!
+
+        assertEquals("Only", queue.current!!.title)
+        assertNull(queue.previous)
+        assertNull(queue.next)
+        assertTrue(queue.remaining.isEmpty())
+        assertTrue(queue.isLast)
+        assertNull(queue.advance())
+        assertFalse(queue.isLast.not())
     }
 }
