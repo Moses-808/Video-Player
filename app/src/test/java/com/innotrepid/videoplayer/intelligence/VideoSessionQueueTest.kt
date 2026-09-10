@@ -5,11 +5,12 @@ import com.innotrepid.videoplayer.library.VideoItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class VideoSessionQueueTest {
     private fun video(id: String, title: String, folder: String) = VideoItem(
         id = id,
-        uri = Uri.parse("content://video/$id"),
+        uri = mock(Uri::class.java),
         title = title,
         relativePath = "$folder/"
     )
