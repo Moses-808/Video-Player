@@ -2,7 +2,6 @@ package com.innotrepid.videoplayer.library
 
 import android.app.Application
 import android.content.ContentResolver
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
@@ -20,11 +19,14 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
     fun add(uri: Uri) {
         viewModelScope.launch {
             val resolver = getApplication<Application>().contentResolver
-            val title = queryDisplayName(resolver, uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Untitled video"
+            val title = queryDisplayName(resolver, uri)
+                ?: uri.lastPathSegment?.substringAfterLast('/')
+                ?: "Untitled video"
             val id = uri.toString().hashCode().toString(16)
             val existing = library.find(id)
             library.upsert(
-                (existing ?: VideoItem(id = id, uri = uri, title = title)).copy(uri = uri, title = title)
+                (existing ?: VideoItem(id = id, uri = uri, title = title))
+                    .copy(uri = uri, title = title)
             )
             _videos.value = library.all()
         }
