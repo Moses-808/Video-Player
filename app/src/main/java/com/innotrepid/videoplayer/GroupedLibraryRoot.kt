@@ -19,7 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -40,9 +40,10 @@ fun GroupedLibraryRoot(
     setSearch: (String) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
-    add: () -> Unit
+    add: () -> Unit,
+    initialFolder: String? = null
 ) {
-    var openedFolder by remember { mutableStateOf<String?>(null) }
+    var openedFolder by remember(initialFolder) { mutableStateOf(initialFolder) }
     val groups = remember(videos, search) {
         videos.filter { search.isBlank() || it.title.contains(search, true) || it.folderName?.contains(search, true) == true }
             .groupBy { it.folderName?.takeIf(String::isNotBlank) ?: "Unsorted" }
