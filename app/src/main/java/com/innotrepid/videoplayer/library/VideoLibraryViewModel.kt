@@ -26,7 +26,7 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun add(uri: Uri) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val resolver = getApplication<Application>().contentResolver
             val title = queryDisplayName(resolver, uri)
                 ?: uri.lastPathSegment?.substringAfterLast('/')
@@ -39,23 +39,31 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun toggleFavorite(id: String) {
-        library.toggleFavorite(id)
-        _videos.value = library.all()
+        viewModelScope.launch(Dispatchers.IO) {
+            library.toggleFavorite(id)
+            _videos.value = library.all()
+        }
     }
 
     fun updateProgress(id: String, positionMs: Long, durationMs: Long) {
-        library.updateProgress(id, positionMs, durationMs)
-        _videos.value = library.all()
+        viewModelScope.launch(Dispatchers.IO) {
+            library.updateProgress(id, positionMs, durationMs)
+            _videos.value = library.all()
+        }
     }
 
     fun markCompleted(id: String) {
-        library.markCompleted(id)
-        _videos.value = library.all()
+        viewModelScope.launch(Dispatchers.IO) {
+            library.markCompleted(id)
+            _videos.value = library.all()
+        }
     }
 
     fun remove(id: String) {
-        library.remove(id)
-        _videos.value = library.all()
+        viewModelScope.launch(Dispatchers.IO) {
+            library.remove(id)
+            _videos.value = library.all()
+        }
     }
 
     private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? = runCatching {
