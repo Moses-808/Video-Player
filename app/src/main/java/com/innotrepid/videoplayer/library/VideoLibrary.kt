@@ -5,6 +5,9 @@ import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.AtomicMoveNotSupportedException
 
 /** Small JSON-backed local metadata store. Original video bytes never live here. */
 class VideoLibrary(context: Context) {
@@ -96,7 +99,19 @@ class VideoLibrary(context: Context) {
                     put("isFavorite", item.isFavorite)
                 })
             }
-            file.writeText(array.toString())
+
+            val temp = File(file.parentFile, "${file.name}.tmp")
+            temp.writeText(array.toString())
+            try {
+                Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
         }
     }
 }
