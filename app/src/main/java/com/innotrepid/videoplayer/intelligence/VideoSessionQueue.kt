@@ -3,9 +3,9 @@ package com.innotrepid.videoplayer.intelligence
 import com.innotrepid.videoplayer.library.VideoItem
 
 /**
- * A small deterministic queue model for the player. It keeps the playback order
- * separate from the library so Momentum can later replace the ranking without
- * changing the player UI.
+ * A deterministic playback session scoped to the selected video's folder.
+ * Keeping the session separate from the live library means rescans cannot
+ * silently reorder what the user is currently watching.
  */
 class VideoSessionQueue private constructor(
     private val items: List<VideoItem>,
@@ -22,20 +22,26 @@ class VideoSessionQueue private constructor(
         return if (index >= 0) copy(currentIndex = index) else null
     }
 
-    fun advance(): VideoSessionQueue? = if (next != null) copy(currentIndex = currentIndex + 1) else null
+    fun advance(): VideoSessionQueue? =
+        if (next != null) copy(currentIndex = currentIndex + 1) else null
 
     private fun copy(currentIndex: Int) = VideoSessionQueue(items, currentIndex)
 
     companion object {
         fun create(videos: List<VideoItem>, selectedId: String): VideoSessionQueue? {
             if (videos.isEmpty()) return null
-            val ordered = videos.sortedWith(videoQueueComparator())
+
+            val selected = videos.firstOrNull { it.id == selectedId } ?: return null
+            val selectedFolder = selected.folderName
+            val sessionItems = videos.filter { it.folderName == selectedFolder }
+            val ordered = sessionItems.sortedWith(videoQueueComparator())
             val index = ordered.indexOfFirst { it.id == selectedId }
+
             return if (index >= 0) VideoSessionQueue(ordered, index) else null
         }
 
         private fun videoQueueComparator(): Comparator<VideoItem> =
-            compareBy<VideoItem>({ it.folderName ?: "\uFFFF" }, { naturalKey(it.title) }, { it.title.lowercase() })
+            compareBy<VideoItem>({ naturalKey(it.title) }, { it.title.lowercase() }, { it.id })
 
         private fun naturalKey(title: String): String = buildString {
             var cursor = 0
