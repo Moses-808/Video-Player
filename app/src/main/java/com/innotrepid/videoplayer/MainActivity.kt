@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +47,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -176,7 +176,10 @@ private fun LibraryScreen(
         }
         Spacer(Modifier.height(14.dp))
         if (!hasMediaPermission) {
-            Text("Let Video Player find videos already stored on your device. The app indexes them; it does not copy the video files.", Color.LightGray)
+            Text(
+                "Let Video Player find videos already stored on your device. The app indexes them; it does not copy the video files.",
+                color = Color.LightGray
+            )
             Spacer(Modifier.height(10.dp))
             Button(onClick = onRequestPermission) { Text("Find my videos") }
             Spacer(Modifier.height(12.dp))
@@ -272,7 +275,7 @@ private fun PlayerScreen(video: VideoItem, player: ExoPlayer, onBack: () -> Unit
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = onBack) { Text("Library") }
             Spacer(Modifier.width(12.dp))
-            Text(video.title, Color.White, maxLines = 1, modifier = Modifier.weight(1f))
+            Text(video.title, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
             Button(onClick = onOpen) { Text("Open") }
         }
