@@ -49,4 +49,5 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.6.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.18.0")
 }
