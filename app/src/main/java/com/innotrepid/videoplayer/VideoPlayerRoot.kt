@@ -48,6 +48,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.innotrepid.videoplayer.intelligence.MomentumEvent
 import com.innotrepid.videoplayer.intelligence.MomentumEventRecorder
+import com.innotrepid.videoplayer.intelligence.VideoSessionQueue
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
 import com.innotrepid.videoplayer.library.VideoThumbnailLoader
@@ -73,10 +74,24 @@ fun VideoPlayerRoot() {
     var selectedId by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var permission by remember { mutableStateOf(hasVideoPermission(context)) }
+    var sessionQueue by remember { mutableStateOf<VideoSessionQueue?>(null) }
     val selected = videos.firstOrNull { it.id == selectedId }
     val player = remember { ExoPlayer.Builder(context).build() }
     val latestSelected by rememberUpdatedState(selected)
     val latestVideos by rememberUpdatedState(videos)
+    val latestQueue by rememberUpdatedState(sessionQueue)
+
+    val startVideo: (VideoItem) -> Unit = remember(videos) {
+        { video ->
+            sessionQueue = VideoSessionQueue.create(videos, video.id)
+            selectedId = video.id
+        }
+    }
+    val openSessionVideo: (VideoItem) -> Unit = { video ->
+        val moved = sessionQueue?.moveTo(video.id)
+        sessionQueue = moved ?: VideoSessionQueue.create(latestVideos, video.id)
+        selectedId = video.id
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         permission = grants.values.any { it }
@@ -148,7 +163,13 @@ fun VideoPlayerRoot() {
                     completed = true
                     recorder.emit(MomentumEvent.VideoCompleted(video.id, player.duration.coerceAtLeast(0L), System.currentTimeMillis()))
                     vm.markCompleted(video.id)
-                    selectedId = nextVideo(latestVideos, video.id)?.id
+                    val nextQueue = latestQueue?.advance()
+                    if (nextQueue != null) {
+                        sessionQueue = nextQueue
+                        selectedId = nextQueue.current?.id
+                    } else {
+                        selectedId = null
+                    }
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -171,11 +192,11 @@ fun VideoPlayerRoot() {
 
     MaterialTheme(colorScheme = if (lightMode) lightColorScheme() else darkColorScheme()) {
         if (selected != null) {
-            PlayerExperience(selected, player, videos, { vm.toggleFavorite(selected.id) }, {
+            PlayerExperience(selected, player, sessionQueue, { vm.toggleFavorite(selected.id) }, {
                 vm.updateProgress(selected.id, player.currentPosition, player.duration)
                 selectedId = null
                 player.stop()
-            }, { selectedId = it.id }, { picker.launch(arrayOf("video/*")) })
+            }, openSessionVideo, { picker.launch(arrayOf("video/*")) })
             return@MaterialTheme
         }
 
@@ -197,9 +218,9 @@ fun VideoPlayerRoot() {
                         (slideOutHorizontally { if (forward) -it else it } + fadeOut())
                 }, label = "screen") { target ->
                     when (target) {
-                        RootScreen.HOME -> HomeRoot(videos, permission, { permissionLauncher.launch(videoPermissions()) }, { picker.launch(arrayOf("video/*")) }, vm::toggleFavorite, { selectedId = it.id }, { folder -> search = folder; previous = RootScreen.HOME; screen = RootScreen.LIBRARY })
-                        RootScreen.LIBRARY -> GroupedLibraryRoot(videos, search, { search = it }, { selectedId = it.id }, vm::toggleFavorite, { picker.launch(arrayOf("video/*")) })
-                        RootScreen.SAVED -> SavedRoot(videos.filter { it.isFavorite }, { selectedId = it.id }, vm::toggleFavorite)
+                        RootScreen.HOME -> HomeRoot(videos, permission, { permissionLauncher.launch(videoPermissions()) }, { picker.launch(arrayOf("video/*")) }, vm::toggleFavorite, startVideo, { folder -> search = folder; previous = RootScreen.HOME; screen = RootScreen.LIBRARY })
+                        RootScreen.LIBRARY -> GroupedLibraryRoot(videos, search, { search = it }, startVideo, vm::toggleFavorite, { picker.launch(arrayOf("video/*")) })
+                        RootScreen.SAVED -> SavedRoot(videos.filter { it.isFavorite }, startVideo, vm::toggleFavorite)
                         RootScreen.SETTINGS -> SettingsRoot(lightMode, { lightMode = it; prefs.edit().putBoolean("light_mode", it).apply() }, permission, { permissionLauncher.launch(videoPermissions()) }, { picker.launch(arrayOf("video/*")) }, { exportLauncher.launch("video-player-diagnostics.jsonl") }, { scope.launch(Dispatchers.IO) { recorder.clear() } })
                     }
                 }
@@ -214,26 +235,11 @@ fun VideoPlayerRoot() {
     }
 }
 
-private fun nextVideo(videos: List<VideoItem>, id: String): VideoItem? = videos.sortedWith(videoQueueComparator()).let { list -> list.getOrNull(list.indexOfFirst { it.id == id } + 1) }
-private fun previousVideo(videos: List<VideoItem>, id: String): VideoItem? = videos.sortedWith(videoQueueComparator()).let { list -> list.getOrNull(list.indexOfFirst { it.id == id } - 1) }
-private fun videoQueueComparator(): Comparator<VideoItem> = compareBy<VideoItem>({ it.folderName ?: "\uFFFF" }, { naturalVideoKey(it.title) }, { it.title.lowercase() })
-private fun naturalVideoKey(title: String): String = buildString {
-    Regex("\\d+").findAll(title.lowercase()).let { matches ->
-        var cursor = 0
-        matches.forEach { match ->
-            append(title.substring(cursor, match.range.first).lowercase())
-            append(match.value.toIntOrNull()?.toString()?.padStart(12, '0') ?: match.value)
-            cursor = match.range.last + 1
-        }
-        append(title.substring(cursor).lowercase())
-    }
-}
-
-@Composable private fun PlayerExperience(video: VideoItem, player: ExoPlayer, queue: List<VideoItem>, favorite: () -> Unit, back: () -> Unit, open: (VideoItem) -> Unit, add: () -> Unit) {
+@Composable private fun PlayerExperience(video: VideoItem, player: ExoPlayer, queue: VideoSessionQueue?, favorite: () -> Unit, back: () -> Unit, open: (VideoItem) -> Unit, add: () -> Unit) {
     val context = LocalContext.current
     val activity = context.findActivity()
-    val next = nextVideo(queue, video.id)
-    val previous = previousVideo(queue, video.id)
+    val next = queue?.next
+    val previous = queue?.previous
     var fullscreen by remember { mutableStateOf(false) }
     var landscape by remember { mutableStateOf(false) }
     var speed by remember { mutableFloatStateOf(1f) }
@@ -366,7 +372,6 @@ private fun android.content.Context.findActivity(): Activity? = when (this) {
 @Composable private fun FeedCardRoot(index: Int, video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clickable { open(video) }) { Column { ThumbnailRoot(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f)); Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Text("%02d".format(index), color = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(video.title, maxLines = 2); if (video.isResumeable) LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().padding(top = 6.dp)) }; TextButton(onClick = { favorite(video.id) }) { Text(if (video.isFavorite) "★" else "☆") } } } } }
 @Composable private fun MiniCardRoot(video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) { Card(Modifier.width(210.dp).clickable { open(video) }) { Column { ThumbnailRoot(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f)); Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Text(video.title, maxLines = 2, modifier = Modifier.weight(1f)); TextButton(onClick = { favorite(video.id) }) { Text(if (video.isFavorite) "★" else "☆") } } } } }
 @Composable private fun VideoRowRoot(video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clickable { open(video) }) { Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) { ThumbnailRoot(video, Modifier.size(130.dp, 82.dp)); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(video.title, maxLines = 2); video.folderName?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }; if (video.isResumeable) LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().padding(top = 6.dp)) }; TextButton(onClick = { favorite(video.id) }) { Text(if (video.isFavorite) "★" else "☆") } } } }
-
 @Composable private fun ThumbnailRoot(video: VideoItem, modifier: Modifier) { val context = LocalContext.current; var bitmap by remember(video.id) { mutableStateOf<android.graphics.Bitmap?>(null) }; LaunchedEffect(video.id) { bitmap = VideoThumbnailLoader.load(context, video.uri, 480, 270) }; Box(modifier.clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) { bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } ?: Text("VIDEO", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) } }
 @Composable private fun SettingCardRoot(title: String, body: String, action: String, onClick: () -> Unit) { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title); Spacer(Modifier.height(4.dp)); Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) }; if (action.isNotBlank()) TextButton(onClick = onClick) { Text(action) } } } }
 
