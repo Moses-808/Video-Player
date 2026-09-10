@@ -22,10 +22,10 @@ data class VideoItem(
     val isResumeable: Boolean
         get() = lastPositionMs > 5_000L && durationMs > 0L && lastPositionMs < durationMs * 0.95f
 
+    /** The immediate parent folder, useful for grouping episodes into a series. */
     val folderName: String?
         get() = relativePath
             ?.trimEnd('/')
-            ?.substringBeforeLast('/')
             ?.substringAfterLast('/')
             ?.takeIf { it.isNotBlank() }
 }
