@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,8 +14,16 @@ import kotlinx.coroutines.launch
 
 class VideoLibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val library = VideoLibrary(application)
+    private val scanner = MediaStoreVideoScanner(application.contentResolver)
     private val _videos = MutableStateFlow(library.all())
     val videos: StateFlow<List<VideoItem>> = _videos.asStateFlow()
+
+    fun scanDevice() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { scanner.scan(library) }
+            _videos.value = library.all()
+        }
+    }
 
     fun add(uri: Uri) {
         viewModelScope.launch {
