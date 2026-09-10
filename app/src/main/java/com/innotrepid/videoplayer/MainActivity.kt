@@ -1,6 +1,9 @@
 package com.innotrepid.videoplayer
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -60,6 +64,19 @@ private fun VideoPlayerApp() {
     val libraryViewModel: VideoLibraryViewModel = viewModel()
     val videos by libraryViewModel.videos.collectAsState()
     var selectedVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var hasMediaPermission by remember { mutableStateOf(hasVideoPermission(context)) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        hasMediaPermission = grants.values.any { it }
+        if (hasMediaPermission) libraryViewModel.scanDevice()
+    }
+
+    LaunchedEffect(Unit) {
+        hasMediaPermission = hasVideoPermission(context)
+        if (hasMediaPermission) libraryViewModel.scanDevice()
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -104,7 +121,21 @@ private fun VideoPlayerApp() {
     MaterialTheme {
         Column(Modifier.fillMaxSize().background(Color.Black)) {
             if (selectedVideo == null) {
-                LibraryScreen(videos, { selectedVideo = it }, { picker.launch(arrayOf("video/*")) })
+                LibraryScreen(
+                    videos = videos,
+                    hasMediaPermission = hasMediaPermission,
+                    onRequestPermission = {
+                        val permissions = if (Build.VERSION.SDK_INT >= 33) {
+                            arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+                        } else {
+                            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
+                        permissionLauncher.launch(permissions)
+                    },
+                    onRefresh = { if (hasMediaPermission) libraryViewModel.scanDevice() },
+                    onVideoSelected = { selectedVideo = it },
+                    onOpen = { picker.launch(arrayOf("video/*")) }
+                )
             } else {
                 PlayerScreen(selectedVideo!!, player, {
                     if (player.duration > 0L) libraryViewModel.updateProgress(selectedVideo!!.id, player.currentPosition, player.duration)
@@ -117,14 +148,30 @@ private fun VideoPlayerApp() {
 }
 
 @androidx.compose.runtime.Composable
-private fun LibraryScreen(videos: List<VideoItem>, onVideoSelected: (VideoItem) -> Unit, onOpen: () -> Unit) {
+private fun LibraryScreen(
+    videos: List<VideoItem>,
+    hasMediaPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    onRefresh: () -> Unit,
+    onVideoSelected: (VideoItem) -> Unit,
+    onOpen: () -> Unit
+) {
     Column(Modifier.fillMaxSize().padding(24.dp)) {
-        Text("Video Library", Color.White, style = MaterialTheme.typography.headlineMedium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Video Library", Color.White, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            if (hasMediaPermission) Button(onClick = onRefresh) { Text("Refresh") }
+        }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onOpen, contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) { Text("Add video") }
+        if (!hasMediaPermission) {
+            Text("Let Video Player find videos already stored on your device. The app indexes them; it does not copy the video files.", Color.LightGray)
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onRequestPermission) { Text("Find my videos") }
+            Spacer(Modifier.height(16.dp))
+        }
+        Button(onClick = onOpen, contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) { Text("Add video manually") }
         Spacer(Modifier.height(24.dp))
         if (videos.isEmpty()) {
-            Text("Your library is empty. Add a local video to begin.", Color.LightGray)
+            Text("No videos indexed yet.", Color.LightGray)
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(videos, key = { it.id }) { video ->
@@ -163,6 +210,13 @@ private fun PlayerScreen(video: VideoItem, player: ExoPlayer, onBack: () -> Unit
         }
     }
 }
+
+private fun hasVideoPermission(context: android.content.Context): Boolean =
+    if (Build.VERSION.SDK_INT >= 33) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+    } else {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+    }
 
 private fun formatTime(milliseconds: Long): String {
     val totalSeconds = (milliseconds / 1000L).coerceAtLeast(0L)
