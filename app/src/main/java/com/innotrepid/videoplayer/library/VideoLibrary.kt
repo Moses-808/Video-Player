@@ -5,9 +5,6 @@ import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.nio.file.AtomicMoveNotSupportedException
 
 /** Small JSON-backed local metadata store. Original video bytes never live here. */
 class VideoLibrary(context: Context) {
@@ -68,8 +65,8 @@ class VideoLibrary(context: Context) {
                     durationMs = value.optLong("durationMs", 0L),
                     sizeBytes = value.optLong("sizeBytes", 0L),
                     dateModifiedMs = value.optLong("dateModifiedMs", 0L),
-                    relativePath = value.optString("relativePath", null),
-                    mimeType = value.optString("mimeType", null),
+                    relativePath = if (value.isNull("relativePath")) null else value.optString("relativePath"),
+                    mimeType = if (value.isNull("mimeType")) null else value.optString("mimeType"),
                     lastPositionMs = value.optLong("lastPositionMs", 0L),
                     lastPlayedAtMs = value.optLong("lastPlayedAtMs", 0L),
                     addedAtMs = value.optLong("addedAtMs", System.currentTimeMillis()),
@@ -81,41 +78,28 @@ class VideoLibrary(context: Context) {
     }
 
     private fun save() {
-        runCatching {
-            file.parentFile?.mkdirs()
-            val array = JSONArray()
-            items.values.forEach { item ->
-                array.put(JSONObject().apply {
-                    put("id", item.id)
-                    put("uri", item.uri.toString())
-                    put("title", item.title)
-                    put("durationMs", item.durationMs)
-                    put("sizeBytes", item.sizeBytes)
-                    put("dateModifiedMs", item.dateModifiedMs)
-                    put("relativePath", item.relativePath)
-                    put("mimeType", item.mimeType)
-                    put("lastPositionMs", item.lastPositionMs)
-                    put("lastPlayedAtMs", item.lastPlayedAtMs)
-                    put("addedAtMs", item.addedAtMs)
-                    put("isFavorite", item.isFavorite)
-                })
-            }
-
-            val temp = File(file.parentFile, "${file.name}.tmp")
-            temp.writeText(array.toString())
-            try {
-                Files.move(
-                    temp.toPath(),
-                    file.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            } catch (_: Exception) {
-                temp.copyTo(file, overwrite = true)
-                temp.delete()
-            }
+        file.parentFile?.mkdirs()
+        val array = JSONArray()
+        items.values.forEach { item ->
+            array.put(JSONObject().apply {
+                put("id", item.id)
+                put("uri", item.uri.toString())
+                put("title", item.title)
+                put("durationMs", item.durationMs)
+                put("sizeBytes", item.sizeBytes)
+                put("dateModifiedMs", item.dateModifiedMs)
+                put("relativePath", item.relativePath)
+                put("mimeType", item.mimeType)
+                put("lastPositionMs", item.lastPositionMs)
+                put("lastPlayedAtMs", item.lastPlayedAtMs)
+                put("addedAtMs", item.addedAtMs)
+                put("isFavorite", item.isFavorite)
+            })
         }
+
+        // Keep persistence deterministic across Android and the local JVM test environment.
+        // A direct write is preferable here to java.nio atomic-move APIs, whose filesystem
+        // semantics vary across the environments in which this small metadata store runs.
+        file.writeText(array.toString())
     }
 }
