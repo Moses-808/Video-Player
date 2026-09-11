@@ -36,4 +36,24 @@ class PlaybackTransitionCoordinatorTest {
         assertEquals("Episode 1", PlaybackTransitionCoordinator.previous(queue, "2")!!.current!!.title)
         assertNull(PlaybackTransitionCoordinator.previous(queue, "1"))
     }
+
+    @Test
+    fun nextStopsAtTheEndOfTheSession() {
+        val queue = VideoSessionQueue.create(
+            listOf(video("1", "Episode 1"), video("2", "Episode 2")),
+            "2"
+        )!!
+
+        assertNull(PlaybackTransitionCoordinator.next(queue, "2"))
+    }
+
+    @Test
+    fun previousStopsAtTheStartOfTheSession() {
+        val queue = VideoSessionQueue.create(
+            listOf(video("1", "Episode 1"), video("2", "Episode 2")),
+            "1"
+        )!!
+
+        assertNull(PlaybackTransitionCoordinator.previous(queue, "1"))
+    }
 }
