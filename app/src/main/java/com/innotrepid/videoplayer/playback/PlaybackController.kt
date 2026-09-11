@@ -39,10 +39,11 @@ class PlaybackController(
     private var started = false
     private var completed = false
     private var released = false
+    private var switchingMedia = false
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (released) return
+            if (released || switchingMedia) return
             if (isPlaying) {
                 if (started) eventFlow.tryEmit(Event.Resumed(player.currentPosition.coerceAtLeast(0L)))
                 else {
@@ -57,7 +58,7 @@ class PlaybackController(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (released) return
+            if (released || switchingMedia) return
             if (playbackState == Player.STATE_ENDED && !completed) {
                 completed = true
                 eventFlow.tryEmit(Event.Completed(player.duration.coerceAtLeast(0L)))
@@ -70,7 +71,7 @@ class PlaybackController(
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
-            if (released) return
+            if (released || switchingMedia) return
             if (reason == Player.DISCONTINUITY_REASON_SEEK &&
                 kotlin.math.abs(newPosition.positionMs - oldPosition.positionMs) >= 1_000L
             ) {
@@ -83,7 +84,7 @@ class PlaybackController(
         override fun onVolumeChanged(volume: Float) = publish()
 
         override fun onPlayerError(error: PlaybackException) {
-            if (released) return
+            if (released || switchingMedia) return
             mutableState.value = mutableState.value.copy(
                 errorMessage = error.message ?: error.errorCodeName
             )
@@ -104,6 +105,7 @@ class PlaybackController(
 
     fun setMedia(uri: Uri, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
         if (released) return
+        switchingMedia = true
         started = false
         completed = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
@@ -113,6 +115,7 @@ class PlaybackController(
         )
         player.prepare()
         player.playWhenReady = autoPlay
+        switchingMedia = false
         publish()
     }
 
@@ -155,6 +158,18 @@ class PlaybackController(
         if (released) return
         player.volume = volume.coerceIn(0f, 1f)
         publish()
+    }
+
+    /** Stop and unload the current media without destroying the controller. */
+    fun clearMedia() {
+        if (released) return
+        switchingMedia = true
+        started = false
+        completed = false
+        player.stop()
+        player.clearMediaItems()
+        switchingMedia = false
+        mutableState.value = PlaybackUiState()
     }
 
     fun currentPositionMs(): Long = if (released) 0L else player.currentPosition.coerceAtLeast(0L)
