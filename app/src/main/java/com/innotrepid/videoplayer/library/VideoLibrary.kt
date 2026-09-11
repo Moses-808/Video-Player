@@ -82,6 +82,7 @@ class VideoLibrary(context: Context) {
 
     private fun save() {
         runCatching {
+            file.parentFile?.mkdirs()
             val array = JSONArray()
             items.values.forEach { item ->
                 array.put(JSONObject().apply {
@@ -111,6 +112,9 @@ class VideoLibrary(context: Context) {
                 )
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: Exception) {
+                temp.copyTo(file, overwrite = true)
+                temp.delete()
             }
         }
     }
