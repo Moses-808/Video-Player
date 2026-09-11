@@ -43,7 +43,7 @@ class PlaybackController(
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (released || switchingMedia) return
+            if (!hasActiveMediaCallback()) return
             if (isPlaying) {
                 if (started) eventFlow.tryEmit(Event.Resumed(player.currentPosition.coerceAtLeast(0L)))
                 else {
@@ -58,7 +58,7 @@ class PlaybackController(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (released || switchingMedia) return
+            if (!hasActiveMediaCallback()) return
             if (playbackState == Player.STATE_ENDED && !completed) {
                 completed = true
                 val duration = player.duration.coerceAtLeast(0L)
@@ -73,7 +73,7 @@ class PlaybackController(
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
-            if (released || switchingMedia) return
+            if (!hasActiveMediaCallback()) return
             if (reason == Player.DISCONTINUITY_REASON_SEEK &&
                 kotlin.math.abs(newPosition.positionMs - oldPosition.positionMs) >= 1_000L
             ) {
@@ -82,11 +82,18 @@ class PlaybackController(
             publish()
         }
 
-        override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) = publish()
-        override fun onVolumeChanged(volume: Float) = publish()
+        override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+            if (!hasActiveMediaCallback()) return
+            publish()
+        }
+
+        override fun onVolumeChanged(volume: Float) {
+            if (!hasActiveMediaCallback()) return
+            publish()
+        }
 
         override fun onPlayerError(error: PlaybackException) {
-            if (released || switchingMedia) return
+            if (!hasActiveMediaCallback()) return
             mutableState.value = mutableState.value.copy(
                 errorMessage = error.message ?: error.errorCodeName
             )
@@ -190,6 +197,9 @@ class PlaybackController(
     fun refresh() {
         if (!released) publish()
     }
+
+    private fun hasActiveMediaCallback(): Boolean =
+        !released && !switchingMedia && player.currentMediaItem != null
 
     private fun publish() {
         if (released) return
