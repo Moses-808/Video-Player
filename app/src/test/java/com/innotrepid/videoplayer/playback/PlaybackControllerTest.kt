@@ -65,6 +65,19 @@ class PlaybackControllerTest {
     }
 
     @Test
+    fun clearMediaStopsAndUnloadsWithoutReleasingController() {
+        val controller = PlaybackController(player)
+
+        controller.clearMedia()
+        controller.play()
+
+        verify(player).stop()
+        verify(player).clearMediaItems()
+        verify(player).play()
+        controller.release()
+    }
+
+    @Test
     fun releaseIsIdempotentAndCommandsAfterReleaseAreIgnored() {
         val controller = PlaybackController(player)
 
@@ -73,12 +86,15 @@ class PlaybackControllerTest {
         controller.play()
         controller.pause()
         controller.seekTo(10_000L)
+        controller.clearMedia()
         controller.refresh()
 
         verify(player).release()
         verify(player, never()).play()
         verify(player, never()).pause()
         verify(player, never()).seekTo(10_000L)
+        verify(player, never()).stop()
+        verify(player, never()).clearMediaItems()
         assertEquals(0L, controller.currentPositionMs())
         assertEquals(0L, controller.durationMs())
     }
