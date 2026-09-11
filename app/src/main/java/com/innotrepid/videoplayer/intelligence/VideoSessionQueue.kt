@@ -29,6 +29,20 @@ class VideoSessionQueue private constructor(
     fun retreat(): VideoSessionQueue? =
         if (previous != null) copy(currentIndex = currentIndex - 1) else null
 
+    /**
+     * Advances only when [currentId] still identifies this queue's current item.
+     * This makes completion handling safe against delayed callbacks from an
+     * earlier media item.
+     */
+    fun advanceIfCurrent(currentId: String): VideoSessionQueue? =
+        if (current?.id == currentId) advance() else null
+
+    /**
+     * Moves backward only when [currentId] still identifies this queue's current item.
+     */
+    fun retreatIfCurrent(currentId: String): VideoSessionQueue? =
+        if (current?.id == currentId) retreat() else null
+
     private fun copy(currentIndex: Int) = VideoSessionQueue(items, currentIndex)
 
     companion object {
