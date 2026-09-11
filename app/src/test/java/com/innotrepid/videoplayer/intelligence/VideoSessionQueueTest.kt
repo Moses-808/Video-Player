@@ -48,21 +48,52 @@ class VideoSessionQueueTest {
     }
 
     @Test
+    fun retreatMovesBackWithoutLeavingSession() {
+        val videos = listOf(
+            video("1", "Episode 1", "Show"),
+            video("2", "Episode 2", "Show"),
+            video("3", "Episode 3", "Show"),
+            video("4", "Bonus", "Other")
+        )
+        val queue = VideoSessionQueue.create(videos, "3")!!
+
+        val previous = queue.retreat()!!
+
+        assertEquals("Episode 2", previous.current!!.title)
+        assertEquals("Episode 1", previous.previous!!.title)
+        assertEquals("Episode 3", previous.next!!.title)
+        assertFalse(previous.isFirst)
+    }
+
+    @Test
+    fun retreatAtFirstItemCannotMovePastSessionBoundary() {
+        val queue = VideoSessionQueue.create(
+            listOf(video("1", "Episode 1", "Show"), video("2", "Episode 2", "Show")),
+            "1"
+        )!!
+
+        assertTrue(queue.isFirst)
+        assertNull(queue.previous)
+        assertNull(queue.retreat())
+    }
+
+    @Test
     fun rejectsEmptyOrUnknownSessions() {
         assertNull(VideoSessionQueue.create(emptyList(), "missing"))
         assertNull(VideoSessionQueue.create(listOf(video("1", "A", "Show")), "missing"))
     }
 
     @Test
-    fun singleItemSessionHasNoNeighborsAndCannotAdvance() {
+    fun singleItemSessionHasNoNeighborsAndCannotAdvanceOrRetreat() {
         val queue = VideoSessionQueue.create(listOf(video("1", "Only", "Show")), "1")!!
 
         assertEquals("Only", queue.current!!.title)
+        assertTrue(queue.isFirst)
+        assertTrue(queue.isLast)
         assertNull(queue.previous)
         assertNull(queue.next)
         assertTrue(queue.remaining.isEmpty())
-        assertTrue(queue.isLast)
         assertNull(queue.advance())
-        assertFalse(queue.isLast.not())
+        assertNull(queue.retreat())
     }
 }
