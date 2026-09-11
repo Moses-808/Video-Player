@@ -44,6 +44,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.innotrepid.videoplayer.intelligence.MomentumEvent
 import com.innotrepid.videoplayer.intelligence.MomentumEventRecorder
+import com.innotrepid.videoplayer.intelligence.PlaybackTransitionCoordinator
 import com.innotrepid.videoplayer.intelligence.VideoSessionQueue
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
@@ -83,8 +84,22 @@ fun VideoPlayerRootSafe() {
     val latestQueue by rememberUpdatedState(queue)
     val latestVideos by rememberUpdatedState(videos)
 
+    val persistCurrentProgress: (VideoItem) -> Unit = { video ->
+        val duration = playbackController.durationMs()
+        if (duration > 0L) {
+            vm.updateProgress(video.id, playbackController.currentPositionMs(), duration)
+        }
+    }
     val openVideo: (VideoItem) -> Unit = remember(videos) { { video -> queue = VideoSessionQueue.create(videos, video.id); selectedId = video.id } }
-    val openSession: (VideoItem) -> Unit = { video -> queue = queue?.moveTo(video.id) ?: VideoSessionQueue.create(latestVideos, video.id); selectedId = video.id }
+    val openSession: (VideoItem) -> Unit = remember(playbackController) {
+        { video ->
+            if (video.id != latestSelected?.id) {
+                latestSelected?.let(persistCurrentProgress)
+                queue = queue?.moveTo(video.id) ?: VideoSessionQueue.create(latestVideos, video.id)
+                selectedId = video.id
+            }
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result -> permission = result.values.any { it }; if (permission) vm.scanDevice() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) { runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }; vm.add(uri) } }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/jsonl")) { uri -> if (uri != null) scope.launch(Dispatchers.IO) { runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(recorder.exportText().toByteArray()) } } } }
@@ -117,7 +132,7 @@ fun VideoPlayerRootSafe() {
                 is PlaybackController.Event.Completed -> {
                     recorder.emit(MomentumEvent.VideoCompleted(video.id, event.durationMs, now))
                     vm.markCompleted(video.id)
-                    val next = latestQueue?.advance()
+                    val next = PlaybackTransitionCoordinator.next(latestQueue, video.id)
                     if (next != null) {
                         queue = next
                         selectedId = next.current?.id
@@ -134,8 +149,7 @@ fun VideoPlayerRootSafe() {
     MaterialTheme(colorScheme = scheme) {
         if (selected != null) {
             SafePlayer(selected, player, playbackController, queue, { vm.toggleFavorite(selected.id) }, {
-                val duration = playbackController.durationMs()
-                if (duration > 0L) vm.updateProgress(selected.id, playbackController.currentPositionMs(), duration)
+                persistCurrentProgress(selected)
                 playbackController.clearMedia()
                 selectedId = null
             }, openSession)
