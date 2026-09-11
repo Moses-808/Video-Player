@@ -172,6 +172,8 @@ class PlaybackController(
         mutableState.value = PlaybackUiState()
     }
 
+    fun currentMediaUri(): Uri? = if (released) null else player.currentMediaItem?.localConfiguration?.uri
+
     fun currentPositionMs(): Long = if (released) 0L else player.currentPosition.coerceAtLeast(0L)
 
     fun durationMs(): Long = if (released) 0L else player.duration.takeIf { it > 0L } ?: 0L
