@@ -37,9 +37,11 @@ class PlaybackController(
 
     private var started = false
     private var completed = false
+    private var released = false
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (released) return
             if (isPlaying) {
                 if (started) eventFlow.tryEmit(Event.Resumed(player.currentPosition.coerceAtLeast(0L)))
                 else {
@@ -54,6 +56,7 @@ class PlaybackController(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (released) return
             if (playbackState == Player.STATE_ENDED && !completed) {
                 completed = true
                 eventFlow.tryEmit(Event.Completed(player.duration.coerceAtLeast(0L)))
@@ -61,32 +64,21 @@ class PlaybackController(
             publish()
         }
 
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int,
-        ) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK &&
-                kotlin.math.abs(newPosition.positionMs - oldPosition.positionMs) >= 1_000L
-            ) {
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (released) return
+            if (reason == Player.DISCONTINUITY_REASON_SEEK && kotlin.math.abs(newPosition.positionMs - oldPosition.positionMs) >= 1_000L) {
                 eventFlow.tryEmit(Event.Seeked(oldPosition.positionMs, newPosition.positionMs))
             }
             publish()
         }
 
-        override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = publish()
-        override fun onVolumeChanged(volume: Float) = publish()
+        override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = publishIfActive()
+        override fun onVolumeChanged(volume: Float) = publishIfActive()
 
         override fun onPlayerError(error: PlaybackException) {
-            mutableState.value = mutableState.value.copy(
-                errorMessage = error.message ?: error.errorCodeName
-            )
-            eventFlow.tryEmit(
-                Event.Error(
-                    player.currentPosition.coerceAtLeast(0L),
-                    "${error.errorCodeName}: ${error.message.orEmpty()}"
-                )
-            )
+            if (released) return
+            mutableState.value = mutableState.value.copy(errorMessage = error.message ?: error.errorCodeName)
+            eventFlow.tryEmit(Event.Error(player.currentPosition.coerceAtLeast(0L), "${error.errorCodeName}: ${error.message.orEmpty()}"))
             publish()
         }
     }
@@ -97,62 +89,75 @@ class PlaybackController(
     }
 
     fun setMedia(uri: Uri, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
+        if (released) return
         started = false
         completed = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
-        player.setMediaItem(
-            androidx.media3.common.MediaItem.fromUri(uri),
-            startPositionMs.coerceAtLeast(0L)
-        )
+        player.setMediaItem(androidx.media3.common.MediaItem.fromUri(uri), startPositionMs.coerceAtLeast(0L))
         player.prepare()
         player.playWhenReady = autoPlay
         publish()
     }
 
     fun play() {
+        if (released) return
         player.play()
         publish()
     }
 
     fun pause() {
+        if (released) return
         player.pause()
         publish()
     }
 
     fun togglePlayPause() {
+        if (released) return
         if (player.isPlaying) pause() else play()
     }
 
     fun seekTo(positionMs: Long) {
+        if (released) return
         player.seekTo(positionMs.coerceAtLeast(0L))
         publish()
     }
 
     fun seekBy(deltaMs: Long) {
+        if (released) return
         player.seekTo((player.currentPosition + deltaMs).coerceAtLeast(0L))
         publish()
     }
 
     fun setSpeed(speed: Float) {
+        if (released) return
         player.setPlaybackSpeed(speed.coerceIn(0.25f, 4f))
         publish()
     }
 
     fun setVolume(volume: Float) {
+        if (released) return
         player.volume = volume.coerceIn(0f, 1f)
         publish()
     }
 
-    fun currentPositionMs(): Long = player.currentPosition.coerceAtLeast(0L)
+    fun currentPositionMs(): Long = if (released) 0L else player.currentPosition.coerceAtLeast(0L)
 
-    fun durationMs(): Long = player.duration.takeIf { it > 0L } ?: 0L
+    fun durationMs(): Long = if (released) 0L else player.duration.takeIf { it > 0L } ?: 0L
 
     fun release() {
+        if (released) return
+        released = true
         player.removeListener(listener)
         player.release()
     }
 
-    fun refresh() = publish()
+    fun refresh() {
+        if (!released) publish()
+    }
+
+    private fun publishIfActive() {
+        if (!released) publish()
+    }
 
     private fun publish() {
         val duration = player.duration.takeIf { it > 0L } ?: 0L
