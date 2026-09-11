@@ -255,6 +255,7 @@ fun VideoPlayerRootSafe() {
                     }
                 }
                 if (next != null) { Spacer(Modifier.height(10.dp)); Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { open(next) }.background(SafeCyan.copy(alpha = .08f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.SkipNext, null, tint = SafeCyan); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("UP NEXT", color = SafeCyan, fontSize = 10.sp); Text(next.title, color = Color.White, maxLines = 1) }; Icon(Icons.Outlined.ChevronRight, null, tint = Color.White.copy(alpha = .6f)) }
+                }
             }
         }
     }
