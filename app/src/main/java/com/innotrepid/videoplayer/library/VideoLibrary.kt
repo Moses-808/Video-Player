@@ -7,8 +7,9 @@ import org.json.JSONObject
 import java.io.File
 
 /** Small JSON-backed local metadata store. Original video bytes never live here. */
-class VideoLibrary(context: Context) {
-    private val file = File(context.filesDir, "video_library.json")
+class VideoLibrary(private val file: File) {
+    constructor(context: Context) : this(File(context.filesDir, "video_library.json"))
+
     private val items = LinkedHashMap<String, VideoItem>()
 
     init { load() }
@@ -96,10 +97,6 @@ class VideoLibrary(context: Context) {
                 put("isFavorite", item.isFavorite)
             })
         }
-
-        // Keep persistence deterministic across Android and the local JVM test environment.
-        // A direct write is preferable here to java.nio atomic-move APIs, whose filesystem
-        // semantics vary across the environments in which this small metadata store runs.
         file.writeText(array.toString())
     }
 }

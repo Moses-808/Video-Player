@@ -1,24 +1,25 @@
 package com.innotrepid.videoplayer.library
 
-import android.content.Context
 import android.net.Uri
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
+import java.io.File
+import java.nio.file.Files
 
 class VideoLibraryPersistenceTest {
+    private fun newFile(): File = Files.createTempDirectory("video-library-").toFile().resolve("video_library.json")
+
     @Test
     fun metadataIsPersistedWithFavoriteAndProgress() {
-        val directory = createTempDir(prefix = "video-library-")
+        val file = newFile()
         try {
-            val context = Mockito.mock(Context::class.java)
-            Mockito.`when`(context.filesDir).thenReturn(directory)
             val uri = Mockito.mock(Uri::class.java)
             Mockito.`when`(uri.toString()).thenReturn("content://videos/1")
 
-            val library = VideoLibrary(context)
+            val library = VideoLibrary(file)
             library.upsert(
                 VideoItem(
                     id = "1",
@@ -32,7 +33,7 @@ class VideoLibraryPersistenceTest {
             library.toggleFavorite("1")
             library.updateProgress("1", 42_000L, 100_000L)
 
-            val persisted = directory.resolve("video_library.json").readText()
+            val persisted = file.readText()
 
             assertTrue(persisted.contains("\"id\":\"1\""))
             assertTrue(persisted.contains("\"title\":\"Episode 1\""))
@@ -42,17 +43,15 @@ class VideoLibraryPersistenceTest {
             assertTrue(persisted.contains("\"durationMs\":100000"))
             assertTrue(persisted.contains("\"uri\":\"content://videos/1\""))
         } finally {
-            directory.deleteRecursively()
+            file.parentFile?.deleteRecursively()
         }
     }
 
     @Test
     fun missingAndUnknownIdsAreNoOps() {
-        val directory = createTempDir(prefix = "video-library-")
+        val file = newFile()
         try {
-            val context = Mockito.mock(Context::class.java)
-            Mockito.`when`(context.filesDir).thenReturn(directory)
-            val library = VideoLibrary(context)
+            val library = VideoLibrary(file)
 
             library.toggleFavorite("missing")
             library.updateProgress("missing", 10_000L, 20_000L)
@@ -61,19 +60,17 @@ class VideoLibraryPersistenceTest {
 
             assertTrue(library.all().isEmpty())
         } finally {
-            directory.deleteRecursively()
+            file.parentFile?.deleteRecursively()
         }
     }
 
     @Test
     fun completedVideoClearsResumePosition() {
-        val directory = createTempDir(prefix = "video-library-")
+        val file = newFile()
         try {
-            val context = Mockito.mock(Context::class.java)
-            Mockito.`when`(context.filesDir).thenReturn(directory)
             val uri = Mockito.mock(Uri::class.java)
             Mockito.`when`(uri.toString()).thenReturn("content://videos/2")
-            val library = VideoLibrary(context)
+            val library = VideoLibrary(file)
 
             library.upsert(VideoItem("2", uri, "Movie", durationMs = 120_000L, lastPositionMs = 60_000L))
             assertTrue(library.find("2")!!.isResumeable)
@@ -83,7 +80,7 @@ class VideoLibraryPersistenceTest {
             assertEquals(0L, library.find("2")!!.lastPositionMs)
             assertFalse(library.find("2")!!.isResumeable)
         } finally {
-            directory.deleteRecursively()
+            file.parentFile?.deleteRecursively()
         }
     }
 }
