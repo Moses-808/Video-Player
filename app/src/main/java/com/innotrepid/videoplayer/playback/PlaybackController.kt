@@ -40,6 +40,7 @@ class PlaybackController(
     private var completed = false
     private var released = false
     private var switchingMedia = false
+    private var canRetry = false
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -61,6 +62,7 @@ class PlaybackController(
             if (!hasActiveMediaCallback()) return
             if (playbackState == Player.STATE_ENDED && !completed) {
                 completed = true
+                canRetry = false
                 val duration = player.duration.coerceAtLeast(0L)
                 val position = player.currentPosition.coerceAtLeast(0L).coerceAtMost(duration)
                 eventFlow.tryEmit(Event.Completed(position, duration))
@@ -94,6 +96,7 @@ class PlaybackController(
 
         override fun onPlayerError(error: PlaybackException) {
             if (!hasActiveMediaCallback()) return
+            canRetry = true
             mutableState.value = mutableState.value.copy(
                 errorMessage = error.message ?: error.errorCodeName
             )
@@ -117,6 +120,7 @@ class PlaybackController(
         switchingMedia = true
         started = false
         completed = false
+        canRetry = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
         player.setMediaItem(
             androidx.media3.common.MediaItem.fromUri(uri),
@@ -130,6 +134,7 @@ class PlaybackController(
 
     fun play() {
         if (released) return
+        canRetry = false
         player.play()
         publish()
     }
@@ -147,12 +152,14 @@ class PlaybackController(
 
     fun seekTo(positionMs: Long) {
         if (released) return
+        canRetry = false
         player.seekTo(positionMs.coerceAtLeast(0L))
         publish()
     }
 
     fun seekBy(deltaMs: Long) {
         if (released) return
+        canRetry = false
         player.seekTo((player.currentPosition + deltaMs).coerceAtLeast(0L))
         publish()
     }
@@ -169,12 +176,23 @@ class PlaybackController(
         publish()
     }
 
+    /** Retry the current failed media from its current position. */
+    fun retry() {
+        if (released || !canRetry || player.currentMediaItem == null) return
+        canRetry = false
+        mutableState.value = mutableState.value.copy(errorMessage = null)
+        player.prepare()
+        player.playWhenReady = true
+        publish()
+    }
+
     /** Stop and unload the current media without destroying the controller. */
     fun clearMedia() {
         if (released) return
         switchingMedia = true
         started = false
         completed = false
+        canRetry = false
         player.stop()
         player.clearMediaItems()
         switchingMedia = false
