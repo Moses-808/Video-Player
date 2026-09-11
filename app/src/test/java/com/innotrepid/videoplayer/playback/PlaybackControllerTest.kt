@@ -2,9 +2,11 @@ package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -103,6 +105,20 @@ class PlaybackControllerTest {
 
         assertEquals(PlaybackUiState(), controller.state.value)
         assertEquals(null, controller.currentMediaUri())
+        controller.release()
+    }
+
+    @Test
+    fun lateCallbacksAfterClearDoNotResurrectPlaybackState() {
+        val controller = PlaybackController(player)
+        val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
+        verify(player).addListener(listener.capture())
+
+        controller.clearMedia()
+        listener.value.onIsPlayingChanged(true)
+        listener.value.onPlaybackStateChanged(Player.STATE_ENDED)
+
+        assertEquals(PlaybackUiState(), controller.state.value)
         controller.release()
     }
 
