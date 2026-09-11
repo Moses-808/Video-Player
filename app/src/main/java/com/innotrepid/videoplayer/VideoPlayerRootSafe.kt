@@ -40,9 +40,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.innotrepid.videoplayer.intelligence.MomentumEvent
@@ -54,6 +51,7 @@ import com.innotrepid.videoplayer.library.VideoThumbnailLoader
 import com.innotrepid.videoplayer.playback.PlaybackController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -93,34 +91,53 @@ fun VideoPlayerRootSafe() {
 
     LaunchedEffect(Unit) { if (permission) vm.scanDevice() }
     DisposableEffect(player) { onDispose { playbackController.release(); recorder.shutdown() } }
-    LaunchedEffect(selectedId) { val video = selected ?: return@LaunchedEffect; playbackController.setMedia(video.uri, video.lastPositionMs.coerceAtLeast(0L), true) }
-    LaunchedEffect(selectedId) { while (isActive && selectedId != null) { delay(8_000L); latestSelected?.let { if (player.duration > 0L) vm.updateProgress(it.id, player.currentPosition, player.duration) } } }
-    DisposableEffect(selectedId) {
-        var started = false
-        var completed = false
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                val video = latestSelected ?: return
-                if (isPlaying) { recorder.emit(if (started) MomentumEvent.VideoResumed(video.id, player.currentPosition, System.currentTimeMillis()) else MomentumEvent.VideoStarted(video.id, player.currentPosition, System.currentTimeMillis())); started = true }
-                else if (started && player.playbackState != Player.STATE_ENDED) recorder.emit(MomentumEvent.VideoPaused(video.id, player.currentPosition, System.currentTimeMillis()))
+    LaunchedEffect(selectedId) {
+        val video = selected ?: return@LaunchedEffect
+        playbackController.setMedia(video.uri, video.lastPositionMs.coerceAtLeast(0L), true)
+    }
+    LaunchedEffect(selectedId) {
+        while (isActive && selectedId != null) {
+            delay(8_000L)
+            latestSelected?.let { video ->
+                val duration = playbackController.durationMs()
+                if (duration > 0L) vm.updateProgress(video.id, playbackController.currentPositionMs(), duration)
             }
-            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-                if (reason == Player.DISCONTINUITY_REASON_SEEK && abs(newPosition.positionMs - oldPosition.positionMs) >= 1000L) latestSelected?.let { recorder.emit(MomentumEvent.VideoSeeked(it.id, oldPosition.positionMs, newPosition.positionMs, System.currentTimeMillis())) }
-            }
-            override fun onPlaybackStateChanged(state: Int) {
-                val video = latestSelected ?: return
-                if (state == Player.STATE_ENDED && !completed) { completed = true; recorder.emit(MomentumEvent.VideoCompleted(video.id, player.duration.coerceAtLeast(0L), System.currentTimeMillis())); vm.markCompleted(video.id); val next = latestQueue?.advance(); if (next != null) { queue = next; selectedId = next.current?.id } else selectedId = null }
-            }
-            override fun onPlayerError(error: PlaybackException) { latestSelected?.let { recorder.emit(MomentumEvent.VideoError(it.id, player.currentPosition.coerceAtLeast(0L), "${error.errorCodeName}: ${error.message.orEmpty()}", System.currentTimeMillis())) } }
         }
-        player.addListener(listener)
-        onDispose { latestSelected?.let { if (player.duration > 0L) vm.updateProgress(it.id, player.currentPosition, player.duration) }; player.removeListener(listener) }
+    }
+    LaunchedEffect(playbackController) {
+        playbackController.events.collect { event ->
+            val video = latestSelected ?: return@collect
+            val now = System.currentTimeMillis()
+            when (event) {
+                is PlaybackController.Event.Started -> recorder.emit(MomentumEvent.VideoStarted(video.id, event.positionMs, now))
+                is PlaybackController.Event.Resumed -> recorder.emit(MomentumEvent.VideoResumed(video.id, event.positionMs, now))
+                is PlaybackController.Event.Paused -> recorder.emit(MomentumEvent.VideoPaused(video.id, event.positionMs, now))
+                is PlaybackController.Event.Seeked -> recorder.emit(MomentumEvent.VideoSeeked(video.id, event.fromPositionMs, event.toPositionMs, now))
+                is PlaybackController.Event.Completed -> {
+                    recorder.emit(MomentumEvent.VideoCompleted(video.id, event.durationMs, now))
+                    vm.markCompleted(video.id)
+                    val next = latestQueue?.advance()
+                    if (next != null) {
+                        queue = next
+                        selectedId = next.current?.id
+                    } else {
+                        selectedId = null
+                    }
+                }
+                is PlaybackController.Event.Error -> recorder.emit(MomentumEvent.VideoError(video.id, event.positionMs, event.message, now))
+            }
+        }
     }
 
     val scheme = if (lightMode) lightColorScheme(primary = Color(0xFF6D28D9), secondary = Color(0xFF0891B2), tertiary = Color(0xFFDB2777)) else darkColorScheme(primary = SafeViolet, secondary = SafeCyan, tertiary = SafePink, background = Color(0xFF07070C), surface = Color(0xFF101018), surfaceVariant = Color(0xFF171724))
     MaterialTheme(colorScheme = scheme) {
         if (selected != null) {
-            SafePlayer(selected, player, playbackController, queue, { vm.toggleFavorite(selected.id) }, { vm.updateProgress(selected.id, player.currentPosition, player.duration); selectedId = null; playbackController.pause() }, openSession)
+            SafePlayer(selected, player, playbackController, queue, { vm.toggleFavorite(selected.id) }, {
+                val duration = playbackController.durationMs()
+                if (duration > 0L) vm.updateProgress(selected.id, playbackController.currentPositionMs(), duration)
+                selectedId = null
+                playbackController.pause()
+            }, openSession)
         } else {
             val order = SafeScreen.entries
             val direction = if (order.indexOf(screen) >= order.indexOf(previousScreen)) 1 else -1
@@ -205,9 +222,9 @@ fun VideoPlayerRootSafe() {
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     SafeControl(Icons.Outlined.SkipPrevious, previous != null) { previous?.let(open) }
-                    SafeControl(Icons.Outlined.Replay10, true) { playbackController.seekTo(player.currentPosition - 10_000L) }
+                    SafeControl(Icons.Outlined.Replay10, true) { playbackController.seekBy(-10_000L) }
                     FilledIconButton(onClick = playbackController::togglePlayPause) { Icon(if (playbackState.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playbackState.isPlaying) "Pause" else "Play") }
-                    SafeControl(Icons.Outlined.Forward10, true) { playbackController.seekTo(player.currentPosition + 10_000L) }
+                    SafeControl(Icons.Outlined.Forward10, true) { playbackController.seekBy(10_000L) }
                     SafeControl(Icons.Outlined.SkipNext, next != null) { next?.let(open) }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
