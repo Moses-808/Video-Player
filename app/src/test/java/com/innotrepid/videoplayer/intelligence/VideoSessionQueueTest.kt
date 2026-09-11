@@ -66,6 +66,19 @@ class VideoSessionQueueTest {
     }
 
     @Test
+    fun guardedTransitionsRejectStaleCurrentIds() {
+        val queue = VideoSessionQueue.create(
+            listOf(video("1", "Episode 1", "Show"), video("2", "Episode 2", "Show"), video("3", "Episode 3", "Show")),
+            "2"
+        )!!
+
+        assertEquals("Episode 3", queue.advanceIfCurrent("2")!!.current!!.title)
+        assertNull(queue.advanceIfCurrent("1"))
+        assertEquals("Episode 1", queue.retreatIfCurrent("2")!!.current!!.title)
+        assertNull(queue.retreatIfCurrent("3"))
+    }
+
+    @Test
     fun retreatAtFirstItemCannotMovePastSessionBoundary() {
         val queue = VideoSessionQueue.create(
             listOf(video("1", "Episode 1", "Show"), video("2", "Episode 2", "Show")),
