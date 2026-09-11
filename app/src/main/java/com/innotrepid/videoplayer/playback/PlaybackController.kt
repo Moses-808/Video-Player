@@ -2,6 +2,7 @@ package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -64,21 +65,34 @@ class PlaybackController(
             publish()
         }
 
-        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
             if (released) return
-            if (reason == Player.DISCONTINUITY_REASON_SEEK && kotlin.math.abs(newPosition.positionMs - oldPosition.positionMs) >= 1_000L) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK &&
+                kotlin.math.abs(newPosition.positionMs - oldPosition.positionMs) >= 1_000L
+            ) {
                 eventFlow.tryEmit(Event.Seeked(oldPosition.positionMs, newPosition.positionMs))
             }
             publish()
         }
 
-        override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = publishIfActive()
-        override fun onVolumeChanged(volume: Float) = publishIfActive()
+        override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) = publish()
+        override fun onVolumeChanged(volume: Float) = publish()
 
         override fun onPlayerError(error: PlaybackException) {
             if (released) return
-            mutableState.value = mutableState.value.copy(errorMessage = error.message ?: error.errorCodeName)
-            eventFlow.tryEmit(Event.Error(player.currentPosition.coerceAtLeast(0L), "${error.errorCodeName}: ${error.message.orEmpty()}"))
+            mutableState.value = mutableState.value.copy(
+                errorMessage = error.message ?: error.errorCodeName
+            )
+            eventFlow.tryEmit(
+                Event.Error(
+                    player.currentPosition.coerceAtLeast(0L),
+                    "${error.errorCodeName}: ${error.message.orEmpty()}"
+                )
+            )
             publish()
         }
     }
@@ -93,7 +107,10 @@ class PlaybackController(
         started = false
         completed = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
-        player.setMediaItem(androidx.media3.common.MediaItem.fromUri(uri), startPositionMs.coerceAtLeast(0L))
+        player.setMediaItem(
+            androidx.media3.common.MediaItem.fromUri(uri),
+            startPositionMs.coerceAtLeast(0L)
+        )
         player.prepare()
         player.playWhenReady = autoPlay
         publish()
@@ -155,11 +172,8 @@ class PlaybackController(
         if (!released) publish()
     }
 
-    private fun publishIfActive() {
-        if (!released) publish()
-    }
-
     private fun publish() {
+        if (released) return
         val duration = player.duration.takeIf { it > 0L } ?: 0L
         mutableState.value = mutableState.value.copy(
             isPlaying = player.isPlaying,
@@ -167,7 +181,7 @@ class PlaybackController(
             positionMs = player.currentPosition.coerceAtLeast(0L),
             durationMs = duration,
             bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L),
-            playbackSpeed = player.playbackParameters.speed,
+            playbackSpeed = player.playbackParameters?.speed ?: 1f,
             volume = player.volume,
             isMuted = player.volume <= 0f,
             errorMessage = mutableState.value.errorMessage,
