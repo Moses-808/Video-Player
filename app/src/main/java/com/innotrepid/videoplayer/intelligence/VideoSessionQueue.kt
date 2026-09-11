@@ -15,6 +15,7 @@ class VideoSessionQueue private constructor(
     val next: VideoItem? get() = items.getOrNull(currentIndex + 1)
     val previous: VideoItem? get() = items.getOrNull(currentIndex - 1)
     val remaining: List<VideoItem> get() = items.drop(currentIndex + 1)
+    val isFirst: Boolean get() = currentIndex == 0
     val isLast: Boolean get() = currentIndex >= items.lastIndex
 
     fun moveTo(id: String): VideoSessionQueue? {
@@ -24,6 +25,9 @@ class VideoSessionQueue private constructor(
 
     fun advance(): VideoSessionQueue? =
         if (next != null) copy(currentIndex = currentIndex + 1) else null
+
+    fun retreat(): VideoSessionQueue? =
+        if (previous != null) copy(currentIndex = currentIndex - 1) else null
 
     private fun copy(currentIndex: Int) = VideoSessionQueue(items, currentIndex)
 
