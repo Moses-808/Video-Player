@@ -107,6 +107,7 @@ fun VideoPlayerRootSafe() {
     LaunchedEffect(playbackController) {
         playbackController.events.collect { event ->
             val video = latestSelected ?: return@collect
+            if (playbackController.currentMediaUri() != video.uri) return@collect
             val now = System.currentTimeMillis()
             when (event) {
                 is PlaybackController.Event.Started -> recorder.emit(MomentumEvent.VideoStarted(video.id, event.positionMs, now))
@@ -253,7 +254,7 @@ fun VideoPlayerRootSafe() {
                         TextButton(onClick = { playbackController.play() }) { Text("RETRY", color = SafePink) }
                     }
                 }
-                if (next != null) { Spacer(Modifier.height(10.dp)); Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { open(next) }.background(SafeCyan.copy(alpha = .08f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.SkipNext, null, tint = SafeCyan); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("UP NEXT", color = SafeCyan, fontSize = 10.sp); Text(next.title, color = Color.White, maxLines = 1) }; Icon(Icons.Outlined.ChevronRight, null, tint = Color.White.copy(alpha = .6f)) } }
+                if (next != null) { Spacer(Modifier.height(10.dp)); Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { open(next) }.background(SafeCyan.copy(alpha = .08f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.SkipNext, null, tint = SafeCyan); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("UP NEXT", color = SafeCyan, fontSize = 10.sp); Text(next.title, color = Color.White, maxLines = 1) }; Icon(Icons.Outlined.ChevronRight, null, tint = Color.White.copy(alpha = .6f)) }
             }
         }
     }
