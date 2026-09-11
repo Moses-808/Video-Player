@@ -1,5 +1,7 @@
 package com.innotrepid.videoplayer.playback
 
+import android.net.Uri
+import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -74,6 +76,33 @@ class PlaybackControllerTest {
         verify(player).stop()
         verify(player).clearMediaItems()
         verify(player).play()
+        controller.release()
+    }
+
+    @Test
+    fun setMediaPassesPersistedPositionAndAutoplayToPlayer() {
+        val uri = mock(Uri::class.java)
+        val controller = PlaybackController(player)
+
+        controller.setMedia(uri, startPositionMs = 42_000L, autoPlay = true)
+
+        verify(player).setMediaItem(MediaItem.fromUri(uri), 42_000L)
+        verify(player).prepare()
+        verify(player).playWhenReady = true
+        controller.release()
+    }
+
+    @Test
+    fun clearMediaResetsPublishedPlaybackState() {
+        `when`(player.isPlaying).thenReturn(true)
+        `when`(player.currentPosition).thenReturn(15_000L)
+        `when`(player.duration).thenReturn(120_000L)
+        val controller = PlaybackController(player)
+
+        controller.clearMedia()
+
+        assertEquals(PlaybackUiState(), controller.state.value)
+        assertEquals(null, controller.currentMediaUri())
         controller.release()
     }
 
