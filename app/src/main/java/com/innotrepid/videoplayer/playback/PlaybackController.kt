@@ -26,7 +26,7 @@ class PlaybackController(
         data class Resumed(val positionMs: Long) : Event
         data class Paused(val positionMs: Long) : Event
         data class Seeked(val fromPositionMs: Long, val toPositionMs: Long) : Event
-        data class Completed(val durationMs: Long) : Event
+        data class Completed(val positionMs: Long, val durationMs: Long) : Event
         data class Error(val positionMs: Long, val message: String) : Event
     }
 
@@ -61,7 +61,9 @@ class PlaybackController(
             if (released || switchingMedia) return
             if (playbackState == Player.STATE_ENDED && !completed) {
                 completed = true
-                eventFlow.tryEmit(Event.Completed(player.duration.coerceAtLeast(0L)))
+                val duration = player.duration.coerceAtLeast(0L)
+                val position = player.currentPosition.coerceAtLeast(0L).coerceAtMost(duration)
+                eventFlow.tryEmit(Event.Completed(position, duration))
             }
             publish()
         }
