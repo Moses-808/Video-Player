@@ -2,12 +2,13 @@ package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
 import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.ArgumentCaptor
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -114,9 +115,14 @@ class PlaybackControllerTest {
         val controller = PlaybackController(player)
         val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
         verify(player).addListener(listener.capture())
-        `when`(player.currentMediaItem).thenReturn(MediaItem.fromUri("content://video/1"))
+        doReturn(MediaItem.fromUri("content://video/1")).`when`(player).currentMediaItem
 
-        listener.value.onPlayerError(mock(PlaybackException::class.java))
+        listener.value.onPlayerError(
+            ExoPlaybackException.createForUnexpected(
+                RuntimeException("retry test"),
+                androidx.media3.common.PlaybackException.ERROR_CODE_UNSPECIFIED,
+            )
+        )
 
         controller.retry()
 
