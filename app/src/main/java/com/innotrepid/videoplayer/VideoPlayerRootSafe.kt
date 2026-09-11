@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -52,6 +51,7 @@ import com.innotrepid.videoplayer.intelligence.VideoSessionQueue
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
 import com.innotrepid.videoplayer.library.VideoThumbnailLoader
+import com.innotrepid.videoplayer.playback.PlaybackController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -72,6 +72,7 @@ fun VideoPlayerRootSafe() {
     val prefs = remember { context.getSharedPreferences("video_player_preferences", 0) }
     val scope = rememberCoroutineScope()
     val player = remember { ExoPlayer.Builder(context).build() }
+    val playbackController = remember(player) { PlaybackController(player) }
     var screen by remember { mutableStateOf(SafeScreen.PULSE) }
     var previousScreen by remember { mutableStateOf(SafeScreen.PULSE) }
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -91,8 +92,8 @@ fun VideoPlayerRootSafe() {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/jsonl")) { uri -> if (uri != null) scope.launch(Dispatchers.IO) { runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(recorder.exportText().toByteArray()) } } } }
 
     LaunchedEffect(Unit) { if (permission) vm.scanDevice() }
-    DisposableEffect(player) { onDispose { player.release(); recorder.shutdown() } }
-    LaunchedEffect(selectedId) { val video = selected ?: return@LaunchedEffect; player.setMediaItem(MediaItem.fromUri(video.uri), video.lastPositionMs.coerceAtLeast(0L)); player.prepare(); player.playWhenReady = true }
+    DisposableEffect(player) { onDispose { playbackController.release(); recorder.shutdown() } }
+    LaunchedEffect(selectedId) { val video = selected ?: return@LaunchedEffect; playbackController.setMedia(video.uri, video.lastPositionMs.coerceAtLeast(0L), true) }
     LaunchedEffect(selectedId) { while (isActive && selectedId != null) { delay(8_000L); latestSelected?.let { if (player.duration > 0L) vm.updateProgress(it.id, player.currentPosition, player.duration) } } }
     DisposableEffect(selectedId) {
         var started = false
@@ -119,7 +120,7 @@ fun VideoPlayerRootSafe() {
     val scheme = if (lightMode) lightColorScheme(primary = Color(0xFF6D28D9), secondary = Color(0xFF0891B2), tertiary = Color(0xFFDB2777)) else darkColorScheme(primary = SafeViolet, secondary = SafeCyan, tertiary = SafePink, background = Color(0xFF07070C), surface = Color(0xFF101018), surfaceVariant = Color(0xFF171724))
     MaterialTheme(colorScheme = scheme) {
         if (selected != null) {
-            SafePlayer(selected, player, queue, { vm.toggleFavorite(selected.id) }, { vm.updateProgress(selected.id, player.currentPosition, player.duration); selectedId = null; player.stop() }, openSession)
+            SafePlayer(selected, player, playbackController, queue, { vm.toggleFavorite(selected.id) }, { vm.updateProgress(selected.id, player.currentPosition, player.duration); selectedId = null; playbackController.pause() }, openSession)
         } else {
             val order = SafeScreen.entries
             val direction = if (order.indexOf(screen) >= order.indexOf(previousScreen)) 1 else -1
@@ -181,23 +182,69 @@ fun VideoPlayerRootSafe() {
 @Composable private fun SafeAction(modifier: Modifier, icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, action: String, onClick: () -> Unit, accent: Color) { Card(modifier.clickable { onClick() }, RoundedCornerShape(24.dp)) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = accent, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }; Text(action, color = accent, fontSize = 10.sp) } } }
 @Composable private fun SafeThumb(video: VideoItem) { val context = LocalContext.current; var bitmap by remember(video.id) { mutableStateOf<android.graphics.Bitmap?>(null) }; LaunchedEffect(video.id, video.uri) { bitmap = runCatching { VideoThumbnailLoader.load(context, video.uri, 480, 270) }.getOrNull() }; if (bitmap != null) androidx.compose.foundation.Image(bitmap!!.asImageBitmap(), video.title, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop) else Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF171724), Color(0xFF292044))))) { Icon(Icons.Outlined.PlayCircleOutline, null, tint = Color.White.copy(alpha = .55f), modifier = Modifier.align(Alignment.Center).size(42.dp)) } }
 
-@Composable private fun SafePlayer(video: VideoItem, player: ExoPlayer, queue: VideoSessionQueue?, favorite: () -> Unit, back: () -> Unit, open: (VideoItem) -> Unit) {
+@Composable private fun SafePlayer(video: VideoItem, player: ExoPlayer, playbackController: PlaybackController, queue: VideoSessionQueue?, favorite: () -> Unit, back: () -> Unit, open: (VideoItem) -> Unit) {
     val context = LocalContext.current
     val activity = context.safeActivity()
+    val playbackState by playbackController.state.collectAsState()
     val next = queue?.next
     val previous = queue?.previous
     var fullscreen by remember { mutableStateOf(false) }
     var landscape by remember { mutableStateOf(false) }
     var speedMenu by remember { mutableStateOf(false) }
+    var volumeExpanded by remember { mutableStateOf(false) }
     DisposableEffect(fullscreen, landscape) { activity?.let { val controller = WindowCompat.getInsetsController(it.window, it.window.decorView); if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars()) else controller.show(WindowInsetsCompat.Type.systemBars()); it.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }; onDispose { } }
+    LaunchedEffect(Unit) { while (isActive) { delay(250L); playbackController.refresh() } }
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = back) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Color.White) }; Column(Modifier.weight(1f)) { Text(video.title, color = Color.White, maxLines = 1); video.folderName?.let { Text(it, color = Color.White.copy(alpha = .55f), fontSize = 11.sp) } }; IconButton(onClick = favorite) { Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) SafePink else Color.White) } }
         AndroidView(factory = { PlayerView(context).apply { this.player = player; useController = true; controllerShowTimeoutMs = 2500; controllerAutoShow = true; setShowPreviousButton(false); setShowNextButton(false) } }, modifier = Modifier.fillMaxWidth().weight(1f))
-        Surface(Modifier.fillMaxWidth(), color = Color(0xFF09090E)) { Column(Modifier.padding(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { SafeControl(Icons.Outlined.SkipPrevious, previous != null) { previous?.let(open) }; SafeControl(Icons.Outlined.Replay10, true) { player.seekBack() }; FilledIconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) { Icon(if (player.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, "Play") }; SafeControl(Icons.Outlined.Forward10, true) { player.seekForward() }; SafeControl(Icons.Outlined.SkipNext, next != null) { next?.let(open) } }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { SafeControl(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, true) { fullscreen = !fullscreen }; SafeControl(Icons.Outlined.ScreenRotation, true) { landscape = !landscape }; Box { SafeControl(Icons.Outlined.Speed, true) { speedMenu = true }; DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) { listOf(.75f, 1f, 1.25f, 1.5f, 2f).forEach { value -> DropdownMenuItem(text = { Text("${value}x") }, onClick = { player.setPlaybackSpeed(value); speedMenu = false }) } } } }; if (next != null) { Spacer(Modifier.height(10.dp)); Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { open(next) }.background(SafeCyan.copy(alpha = .08f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.SkipNext, null, tint = SafeCyan); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("UP NEXT", color = SafeCyan, fontSize = 10.sp); Text(next.title, color = Color.White, maxLines = 1) }; Icon(Icons.Outlined.ChevronRight, null, tint = Color.White.copy(alpha = .6f)) } } } }
+        Surface(Modifier.fillMaxWidth(), color = Color(0xFF09090E)) {
+            Column(Modifier.padding(12.dp)) {
+                if (playbackState.durationMs > 0L) {
+                    Slider(value = playbackState.positionMs.coerceIn(0L, playbackState.durationMs).toFloat(), onValueChange = { playbackController.seekTo(it.toLong()) }, valueRange = 0f..playbackState.durationMs.toFloat(), modifier = Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatPlaybackTime(playbackState.positionMs), color = Color.White.copy(alpha = .72f), fontSize = 10.sp); Text(formatPlaybackTime(playbackState.durationMs), color = Color.White.copy(alpha = .72f), fontSize = 10.sp) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    SafeControl(Icons.Outlined.SkipPrevious, previous != null) { previous?.let(open) }
+                    SafeControl(Icons.Outlined.Replay10, true) { playbackController.seekTo(player.currentPosition - 10_000L) }
+                    FilledIconButton(onClick = playbackController::togglePlayPause) { Icon(if (playbackState.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playbackState.isPlaying) "Pause" else "Play") }
+                    SafeControl(Icons.Outlined.Forward10, true) { playbackController.seekTo(player.currentPosition + 10_000L) }
+                    SafeControl(Icons.Outlined.SkipNext, next != null) { next?.let(open) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    SafeControl(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, true) { fullscreen = !fullscreen }
+                    SafeControl(Icons.Outlined.ScreenRotation, true) { landscape = !landscape }
+                    Box {
+                        SafeControl(Icons.Outlined.Speed, true) { speedMenu = true }
+                        DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) { listOf(.75f, 1f, 1.25f, 1.5f, 2f).forEach { value -> DropdownMenuItem(text = { Text("${value}x") }, onClick = { playbackController.setSpeed(value); speedMenu = false }) } }
+                    }
+                    Box {
+                        SafeControl(if (playbackState.isMuted) Icons.Outlined.VolumeOff else Icons.Outlined.VolumeUp, true) { volumeExpanded = !volumeExpanded }
+                        DropdownMenu(expanded = volumeExpanded, onDismissRequest = { volumeExpanded = false }) {
+                            Column(Modifier.width(220.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                Text("Volume", color = Color.White)
+                                Slider(value = playbackState.volume, onValueChange = playbackController::setVolume, valueRange = 0f..1f)
+                            }
+                        }
+                    }
+                }
+                if (playbackState.errorMessage != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(SafePink.copy(alpha = .12f)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.ErrorOutline, null, tint = SafePink)
+                        Spacer(Modifier.width(8.dp))
+                        Text(playbackState.errorMessage ?: "Playback error", color = Color.White, modifier = Modifier.weight(1f), maxLines = 2)
+                        TextButton(onClick = { playbackController.play() }) { Text("RETRY", color = SafePink) }
+                    }
+                }
+                if (next != null) { Spacer(Modifier.height(10.dp)); Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { open(next) }.background(SafeCyan.copy(alpha = .08f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.SkipNext, null, tint = SafeCyan); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("UP NEXT", color = SafeCyan, fontSize = 10.sp); Text(next.title, color = Color.White, maxLines = 1) }; Icon(Icons.Outlined.ChevronRight, null, tint = Color.White.copy(alpha = .6f)) } }
+            }
+        }
     }
 }
+
 @Composable private fun SafeControl(icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, onClick: () -> Unit) { IconButton(onClick = onClick, enabled = enabled) { Icon(icon, null, tint = if (enabled) Color.White else Color.White.copy(alpha = .25f)) } }
 
+private fun formatPlaybackTime(milliseconds: Long): String { val totalSeconds = (milliseconds.coerceAtLeast(0L) / 1000L); val hours = totalSeconds / 3600L; val minutes = (totalSeconds % 3600L) / 60L; val seconds = totalSeconds % 60L; return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds) }
 private fun Context.safeActivity(): Activity? { var current = this; while (current is ContextWrapper) { if (current is Activity) return current; current = current.baseContext }; return null }
 private fun hasSafeVideoPermission(context: Context): Boolean = if (Build.VERSION.SDK_INT >= 33) androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.READ_MEDIA_VIDEO") == PackageManager.PERMISSION_GRANTED else androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.READ_EXTERNAL_STORAGE") == PackageManager.PERMISSION_GRANTED
 private fun safeVideoPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 33) arrayOf("android.permission.READ_MEDIA_VIDEO") else arrayOf("android.permission.READ_EXTERNAL_STORAGE")
