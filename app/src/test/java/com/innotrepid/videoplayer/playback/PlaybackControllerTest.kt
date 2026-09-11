@@ -2,6 +2,7 @@ package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
@@ -119,6 +120,24 @@ class PlaybackControllerTest {
         listener.value.onPlaybackStateChanged(Player.STATE_ENDED)
 
         assertEquals(PlaybackUiState(), controller.state.value)
+        controller.release()
+    }
+
+    @Test
+    fun retryPreparesCurrentFailedMediaAndAutoplaysOnce() {
+        val controller = PlaybackController(player)
+        val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
+        verify(player).addListener(listener.capture())
+        `when`(player.currentMediaItem).thenReturn(MediaItem.fromUri("content://video/1"))
+
+        listener.value.onPlayerError(mock(PlaybackException::class.java))
+
+        controller.retry()
+
+        verify(player).prepare()
+        verify(player).playWhenReady = true
+        verify(player, org.mockito.Mockito.times(1)).prepare()
+        assertEquals(null, controller.state.value.errorMessage)
         controller.release()
     }
 
