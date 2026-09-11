@@ -135,8 +135,8 @@ fun VideoPlayerRootSafe() {
             SafePlayer(selected, player, playbackController, queue, { vm.toggleFavorite(selected.id) }, {
                 val duration = playbackController.durationMs()
                 if (duration > 0L) vm.updateProgress(selected.id, playbackController.currentPositionMs(), duration)
+                playbackController.clearMedia()
                 selectedId = null
-                playbackController.pause()
             }, openSession)
         } else {
             val order = SafeScreen.entries
