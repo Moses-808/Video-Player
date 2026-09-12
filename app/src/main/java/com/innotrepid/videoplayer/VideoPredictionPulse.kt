@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,8 +37,7 @@ internal fun VideoPredictionPulse(
     if (ranked.isEmpty()) return
 
     val hero = ranked.first()
-    val confident = hero.first.confidence >= 0.45f
-    if (!confident) return
+    if (hero.first.confidence < 0.45f) return
 
     Column(
         modifier = Modifier
