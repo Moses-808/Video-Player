@@ -82,6 +82,12 @@ internal fun PhaseBPlayerScreen(
             chromeVisible = false
         }
     }
+    LaunchedEffect(controller, video.id) {
+        while (isActive) {
+            controller.refresh()
+            delay(200L)
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
