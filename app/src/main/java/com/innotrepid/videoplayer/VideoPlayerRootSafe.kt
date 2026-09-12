@@ -120,7 +120,8 @@ fun VideoPlayerRootSafe() {
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, _ -> },
-                            onDragEnd = { }
+                            onDragEnd = { },
+                            onDragCancel = { }
                         ) { _, amount ->
                             if (abs(amount) > 100f) {
                                 val index = order.indexOf(screen)
