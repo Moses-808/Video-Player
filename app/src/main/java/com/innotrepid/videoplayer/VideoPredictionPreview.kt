@@ -16,18 +16,19 @@ import com.innotrepid.videoplayer.library.VideoItem
 @Composable
 internal fun VideoPredictionPreview(
     video: VideoItem,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    previewPositionMs: Long? = null
 ) {
     val context = LocalContext.current
-    val previewPlayer = remember(video.id, video.uri) {
+    val previewPlayer = remember(video.id, video.uri, previewPositionMs) {
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
-            val previewPositionMs = VideoPreviewMoment.startPositionMs(
+            val position = previewPositionMs ?: VideoPreviewMoment.startPositionMs(
                 durationMs = video.durationMs,
                 resumePositionMs = video.lastPositionMs
             )
-            setMediaItem(MediaItem.fromUri(video.uri), previewPositionMs)
+            setMediaItem(MediaItem.fromUri(video.uri), position)
             prepare()
             playWhenReady = true
         }
