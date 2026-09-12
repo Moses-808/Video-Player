@@ -1,6 +1,7 @@
 package com.innotrepid.videoplayer.intelligence
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VideoPredictionFeedbackTest {
@@ -28,5 +29,13 @@ class VideoPredictionFeedbackTest {
     fun confidenceRemainsBounded() {
         assertEquals(1f, VideoPredictionFeedback.adjustedConfidence(0.99f, 10, 10), 0.0001f)
         assertEquals(0f, VideoPredictionFeedback.adjustedConfidence(0.01f, 10, 0), 0.0001f)
+    }
+
+    @Test
+    fun feedbackCanChangePredictionOrder() {
+        val accepted = VideoPredictionFeedback.adjustedConfidence(0.70f, 10, 10)
+        val ignored = VideoPredictionFeedback.adjustedConfidence(0.74f, 10, 0)
+
+        assertTrue(accepted > ignored)
     }
 }
