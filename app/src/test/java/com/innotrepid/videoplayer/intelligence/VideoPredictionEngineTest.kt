@@ -31,6 +31,19 @@ class VideoPredictionEngineTest {
     }
 
     @Test
+    fun learnedSeekRegionIsAttachedToPrediction() {
+        val videos = listOf(video("v", "Video", "show"))
+        val events = listOf(
+            MomentumEvent.VideoSeeked("v", 0L, 120_000L, 1_000L),
+            MomentumEvent.VideoSeeked("v", 10_000L, 130_000L, 2_000L)
+        )
+
+        val prediction = VideoPredictionEngine.predict(videos, events).single()
+
+        assertEquals(125_000L, prediction.previewPositionMs)
+    }
+
+    @Test
     fun emptyEventHistoryStillProvidesNaturalFallback() {
         val videos = listOf(
             video("a", "A", "show"),
@@ -51,7 +64,7 @@ class VideoPredictionEngineTest {
         id = id,
         uri = mock(Uri::class.java),
         title = title,
-        durationMs = 60_000L,
+        durationMs = 300_000L,
         relativePath = folder
     )
 }
