@@ -10,7 +10,8 @@ data class VideoPrediction(
     val mediaId: String,
     val score: Float,
     val confidence: Float,
-    val reasons: List<Reason>
+    val reasons: List<Reason>,
+    val previewPositionMs: Long? = null
 ) {
     enum class Reason {
         SAME_FOLDER_CONTINUATION,
