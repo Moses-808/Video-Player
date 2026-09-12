@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.innotrepid.videoplayer.intelligence.VideoPrediction
+import com.innotrepid.videoplayer.intelligence.VideoPredictionFeedbackStore
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoThumbnailLoader
 
@@ -35,11 +36,19 @@ internal fun VideoPredictionPulse(
     predictions: List<VideoPrediction>,
     open: (VideoItem) -> Unit
 ) {
+    val context = LocalContext.current
+    val feedback = remember { VideoPredictionFeedbackStore(context.applicationContext) }
     val byId = videos.associateBy { it.id }
     val ranked = predictions.mapNotNull { prediction -> byId[prediction.mediaId]?.let { prediction to it } }.take(5)
     if (ranked.isEmpty()) return
+
     val hero = ranked.first()
-    if (hero.first.confidence < 0.45f) return
+    val adjustedHeroConfidence = feedback.adjustedConfidence(hero.first.mediaId, hero.first.confidence)
+    if (adjustedHeroConfidence < 0.45f) return
+
+    LaunchedEffect(hero.first.mediaId) {
+        feedback.recordShown(hero.first.mediaId)
+    }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -50,7 +59,7 @@ internal fun VideoPredictionPulse(
                 Text(predictionReason(hero.first), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
         }
-        VideoPredictionHero(hero.second, hero.first, open)
+        VideoPredictionHero(hero.second, hero.first, feedback, open)
         if (ranked.size > 1) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(ranked.drop(1), key = { it.first.mediaId }) { (prediction, video) -> VideoPredictionCard(prediction, video, open) }
@@ -60,8 +69,18 @@ internal fun VideoPredictionPulse(
 }
 
 @Composable
-private fun VideoPredictionHero(video: VideoItem, prediction: VideoPrediction, open: (VideoItem) -> Unit) {
-    Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).clickable { open(video) }) {
+private fun VideoPredictionHero(
+    video: VideoItem,
+    prediction: VideoPrediction,
+    feedback: VideoPredictionFeedbackStore,
+    open: (VideoItem) -> Unit
+) {
+    fun accept() {
+        feedback.recordAccepted(prediction.mediaId)
+        open(video)
+    }
+
+    Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).clickable { accept() }) {
         VideoPredictionPreview(video, Modifier.fillMaxSize(), prediction.previewPositionMs)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .82f)))))
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
@@ -71,7 +90,7 @@ private fun VideoPredictionHero(video: VideoItem, prediction: VideoPrediction, o
             Spacer(Modifier.height(4.dp))
             Text(predictionReason(prediction), color = Color.White.copy(alpha = .72f), fontSize = 11.sp, maxLines = 2)
         }
-        FilledIconButton(onClick = { open(video) }, modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)) {
+        FilledIconButton(onClick = { accept() }, modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)) {
             Icon(Icons.Outlined.PlayArrow, contentDescription = "Play")
         }
     }
