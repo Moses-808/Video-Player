@@ -2,8 +2,8 @@ package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -118,9 +118,10 @@ class PlaybackControllerTest {
         doReturn(MediaItem.fromUri("content://video/1")).`when`(player).currentMediaItem
 
         listener.value.onPlayerError(
-            ExoPlaybackException.createForUnexpected(
-                RuntimeException("retry test"),
-                androidx.media3.common.PlaybackException.ERROR_CODE_UNSPECIFIED,
+            PlaybackException(
+                "retry test",
+                RuntimeException("retry cause"),
+                PlaybackException.ERROR_CODE_UNSPECIFIED,
             )
         )
 
