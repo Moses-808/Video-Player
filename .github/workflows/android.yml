@@ -2,7 +2,7 @@ name: Android checks
 
 on:
   push:
-    branches: [ main, playback-stability-core-controls ]
+    branches: [ main, playback-stability-core-controls, phase-b-player-pulse-redesign ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
