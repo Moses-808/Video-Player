@@ -45,11 +45,14 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    /**
+     * Playback progress is a durability checkpoint. It is intentionally persisted
+     * synchronously so an Activity/process shutdown cannot cancel the write before
+     * the latest known position reaches disk.
+     */
     fun updateProgress(id: String, positionMs: Long, durationMs: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            library.updateProgress(id, positionMs, durationMs)
-            _videos.value = library.all()
-        }
+        library.updateProgress(id, positionMs, durationMs)
+        _videos.value = library.all()
     }
 
     fun markCompleted(id: String) {
