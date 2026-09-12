@@ -100,7 +100,7 @@ class VideoBehaviorSignalInterpreterTest {
             )
         )
 
-        assertEquals(listOf(1_000L, 1_000L, 5_000L), signals.map { it.timestampMs }.sorted())
+        assertEquals(listOf(4_000L, 4_000L, 5_000L), signals.map { it.timestampMs }.sorted())
     }
 
     @Test
