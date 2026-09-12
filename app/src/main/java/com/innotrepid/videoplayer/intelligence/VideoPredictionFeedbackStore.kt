@@ -44,6 +44,11 @@ class VideoPredictionFeedbackStore(context: Context) {
         )
     }
 
+    /** Forget learned prediction preferences while keeping playback history intact. */
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
+
     private fun shownKey(mediaId: String): String = "shown_${digest(mediaId)}"
 
     private fun acceptedKey(mediaId: String): String = "accepted_${digest(mediaId)}"
