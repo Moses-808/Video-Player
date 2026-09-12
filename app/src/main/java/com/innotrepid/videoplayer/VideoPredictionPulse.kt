@@ -62,7 +62,7 @@ internal fun VideoPredictionPulse(
 @Composable
 private fun VideoPredictionHero(video: VideoItem, prediction: VideoPrediction, open: (VideoItem) -> Unit) {
     Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).clickable { open(video) }) {
-        VideoPredictionPreview(video, Modifier.fillMaxSize())
+        VideoPredictionPreview(video, Modifier.fillMaxSize(), prediction.previewPositionMs)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .82f)))))
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
             Text("PREDICTED NEXT", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, letterSpacing = 1.5.sp)
