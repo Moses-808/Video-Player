@@ -10,7 +10,8 @@ package com.innotrepid.videoplayer.intelligence
 object VideoBehaviorSignalInterpreter {
     data class VideoContext(
         val mediaId: String,
-        val folderKey: String? = null
+        val folderKey: String? = null,
+        val durationMs: Long = 0L
     )
 
     fun interpret(
@@ -68,7 +69,7 @@ object VideoBehaviorSignalInterpreter {
                         signals = signals,
                         mediaId = event.mediaId,
                         positionMs = event.positionMs,
-                        durationMs = latestKnownDuration(ordered, event.mediaId),
+                        durationMs = contexts[event.mediaId]?.durationMs ?: 0L,
                         timestampMs = event.timestampMs,
                         nowMs = nowMs
                     )
@@ -159,17 +160,10 @@ object VideoBehaviorSignalInterpreter {
         }
     }
 
-    private fun latestKnownDuration(events: List<MomentumEvent>, mediaId: String): Long =
-        events.asSequence()
-            .filter { it is MomentumEvent.VideoCompleted && it.mediaId == mediaId }
-            .map { (it as MomentumEvent.VideoCompleted).durationMs }
-            .firstOrNull { it > 0L }
-            ?: 0L
-
     private const val EARLY_ABANDONMENT_THRESHOLD = 0.10f
     private const val MOST_WATCHED_THRESHOLD = 0.80f
     private const val MIN_ABANDONMENT_AGE_MS = 0L
     private const val MIN_SEEK_SIGNAL_MS = 5_000L
-    private const val SEEK_STRENGTH_REFERENCE_MS = 60_000L.toFloat()
+    private const val SEEK_STRENGTH_REFERENCE_MS = 60_000f
     private const val CONTINUATION_WINDOW_MS = 2 * 60 * 1000L
 }
