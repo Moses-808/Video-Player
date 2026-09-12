@@ -3,9 +3,8 @@ package com.innotrepid.videoplayer.intelligence
 import com.innotrepid.videoplayer.library.VideoItem
 
 /**
- * A deterministic playback session scoped to the selected video's folder.
- * Keeping the session separate from the live library means rescans cannot
- * silently reorder what the user is currently watching.
+ * A deterministic playback session scoped to the selected video's physical folder.
+ * The full relative path is used so folders such as Sn1 from different series never merge.
  */
 class VideoSessionQueue private constructor(
     private val items: List<VideoItem>,
@@ -29,17 +28,9 @@ class VideoSessionQueue private constructor(
     fun retreat(): VideoSessionQueue? =
         if (previous != null) copy(currentIndex = currentIndex - 1) else null
 
-    /**
-     * Advances only when [currentId] still identifies this queue's current item.
-     * This makes completion handling safe against delayed callbacks from an
-     * earlier media item.
-     */
     fun advanceIfCurrent(currentId: String): VideoSessionQueue? =
         if (current?.id == currentId) advance() else null
 
-    /**
-     * Moves backward only when [currentId] still identifies this queue's current item.
-     */
     fun retreatIfCurrent(currentId: String): VideoSessionQueue? =
         if (current?.id == currentId) retreat() else null
 
@@ -50,8 +41,8 @@ class VideoSessionQueue private constructor(
             if (videos.isEmpty()) return null
 
             val selected = videos.firstOrNull { it.id == selectedId } ?: return null
-            val selectedFolder = selected.folderName
-            val sessionItems = videos.filter { it.folderName == selectedFolder }
+            val selectedFolder = selected.folderKey
+            val sessionItems = videos.filter { it.folderKey == selectedFolder }
             val ordered = sessionItems.sortedWith(videoQueueComparator())
             val index = ordered.indexOfFirst { it.id == selectedId }
 
