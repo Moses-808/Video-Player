@@ -38,4 +38,21 @@ class VideoPredictionFeedbackTest {
 
         assertTrue(accepted > ignored)
     }
+
+    @Test
+    fun acceptedCountCannotExceedExposureCount() {
+        val impossibleState = VideoPredictionFeedback.adjustedConfidence(0.70f, 10, 100)
+        val fullyAccepted = VideoPredictionFeedback.adjustedConfidence(0.70f, 10, 10)
+
+        assertEquals(fullyAccepted, impossibleState, 0.0001f)
+    }
+
+    @Test
+    fun negativeCountsCannotCreateConfidenceBoost() {
+        assertEquals(
+            0.70f,
+            VideoPredictionFeedback.adjustedConfidence(0.70f, -10, -5),
+            0.0001f
+        )
+    }
 }
