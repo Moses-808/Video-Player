@@ -39,7 +39,12 @@ internal fun VideoPredictionPulse(
     val context = LocalContext.current
     val feedback = remember { VideoPredictionFeedbackStore(context.applicationContext) }
     val byId = videos.associateBy { it.id }
-    val ranked = predictions.mapNotNull { prediction -> byId[prediction.mediaId]?.let { prediction to it } }.take(5)
+    val ranked = predictions
+        .mapNotNull { prediction -> byId[prediction.mediaId]?.let { prediction to it } }
+        .sortedByDescending { (prediction, _) ->
+            feedback.adjustedConfidence(prediction.mediaId, prediction.confidence)
+        }
+        .take(5)
     if (ranked.isEmpty()) return
 
     val hero = ranked.first()
