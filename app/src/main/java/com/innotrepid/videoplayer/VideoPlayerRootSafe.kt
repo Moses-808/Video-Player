@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -65,7 +66,7 @@ fun VideoPlayerRootSafe() {
     val player = remember { ExoPlayer.Builder(context).build() }
     val controller = remember(player) { PlaybackController(player) }
     var screen by remember { mutableStateOf(PhaseBScreen.PULSE) }
-    var previousScreen by remember { mutableStateOf(PhaseBScreen.PULSE) }
+    var screenDirection by remember { mutableIntStateOf(1) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var queue by remember { mutableStateOf<VideoSessionQueue?>(null) }
     var search by remember { mutableStateOf("") }
@@ -87,6 +88,12 @@ fun VideoPlayerRootSafe() {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result -> permission = result.values.any { it }; if (permission) vm.scanDevice() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) { runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }; vm.add(uri) } }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/jsonl")) { uri -> if (uri != null) scope.launch(Dispatchers.IO) { runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(recorder.exportText().toByteArray()) } } } }
+    fun navigateTo(target: PhaseBScreen) {
+        if (target == screen) return
+        val order = PhaseBScreen.entries
+        screenDirection = if (order.indexOf(target) > order.indexOf(screen)) 1 else -1
+        screen = target
+    }
     LaunchedEffect(Unit) { if (permission) vm.scanDevice() }
     LaunchedEffect(videos, intelligenceEnabled, learnFromHistory) {
         if (!intelligenceEnabled) {
@@ -106,17 +113,46 @@ fun VideoPlayerRootSafe() {
         if (selected != null) PhaseBPlayerScreen(selected, player, controller, queue, { vm.toggleFavorite(selected.id) }, { persist(selected); controller.clearMedia(); selectedId = null }, openSession)
         else {
             val order = PhaseBScreen.entries
-            val direction = if (order.indexOf(screen) >= order.indexOf(previousScreen)) 1 else -1
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).pointerInput(screen) { detectHorizontalDragGestures { _, amount -> if (abs(amount) > 100f) { val index = order.indexOf(screen); val next = (index + if (amount < 0) 1 else -1).coerceIn(0, order.lastIndex); if (next != index) { previousScreen = screen; screen = order[next] } } } }) {
-                AnimatedContent(targetState = screen, transitionSpec = { val forward = direction > 0; (slideInHorizontally { if (forward) it else -it } + fadeIn()) togetherWith (slideOutHorizontally { if (forward) -it else it } + fadeOut()) }, label = "phase-b-screen") { target ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onHorizontalDrag = { _, _ -> },
+                            onDragEnd = { }
+                        ) { _, amount ->
+                            if (abs(amount) > 100f) {
+                                val index = order.indexOf(screen)
+                                val next = (index + if (amount < 0) 1 else -1).coerceIn(0, order.lastIndex)
+                                if (next != index) navigateTo(order[next])
+                            }
+                        }
+                    }
+            ) {
+                AnimatedContent(
+                    targetState = screen,
+                    transitionSpec = {
+                        val forward = screenDirection > 0
+                        (slideInHorizontally(
+                            animationSpec = tween(320),
+                            initialOffsetX = { width -> if (forward) width else -width }
+                        ) + fadeIn(animationSpec = tween(220))) togetherWith
+                            (slideOutHorizontally(
+                                animationSpec = tween(320),
+                                targetOffsetX = { width -> if (forward) -width else width }
+                            ) + fadeOut(animationSpec = tween(180)))
+                    },
+                    label = "phase-b-screen"
+                ) { target ->
                     when (target) {
-                        PhaseBScreen.PULSE -> PhaseBPulse(videos, predictions, permission, { permissionLauncher.launch(phaseBVideoPermissions()) }, vm::toggleFavorite, openVideo) { folder -> pendingFolder = folder; previousScreen = screen; screen = PhaseBScreen.LIBRARY }
+                        PhaseBScreen.PULSE -> PhaseBPulse(videos, predictions, permission, { permissionLauncher.launch(phaseBVideoPermissions()) }, vm::toggleFavorite, openVideo) { folder -> pendingFolder = folder; navigateTo(PhaseBScreen.LIBRARY) }
                         PhaseBScreen.LIBRARY -> GroupedLibraryRoot(videos, search, { search = it }, openVideo, vm::toggleFavorite, pendingFolder) { picker.launch(arrayOf("video/*")) }
                         PhaseBScreen.SAVED -> PhaseBSaved(videos.filter { it.isFavorite }, openVideo, vm::toggleFavorite)
                         PhaseBScreen.SETTINGS -> PhaseBSettings(lightMode, { lightMode = it; prefs.edit().putBoolean("light_mode", it).apply() }, intelligenceEnabled, { intelligenceEnabled = it; prefs.edit().putBoolean("intelligence_enabled", it).apply() }, learnFromHistory, { learnFromHistory = it; prefs.edit().putBoolean("learn_from_history", it).apply() }, autoAdvance, { autoAdvance = it; prefs.edit().putBoolean("auto_advance", it).apply() }, permission, { permissionLauncher.launch(phaseBVideoPermissions()) }, { picker.launch(arrayOf("video/*")) }, { exportLauncher.launch("video-player-diagnostics.jsonl") }, { scope.launch(Dispatchers.IO) { recorder.clear() } }, { feedbackStore.clear(); predictions = emptyList() }, { showAbout = true })
                     }
                 }
-                PhaseBBottomBar(screen) { previousScreen = screen; if (it != PhaseBScreen.LIBRARY) pendingFolder = null; screen = it }
+                PhaseBBottomBar(screen) { if (it != PhaseBScreen.LIBRARY) pendingFolder = null; navigateTo(it) }
             }
         }
         if (showAbout) PhaseBAboutDialog { showAbout = false }
