@@ -83,7 +83,7 @@ internal fun PhaseBPlayerScreen(
         }
     }
     LaunchedEffect(controller, video.id) {
-        while (isActive) {
+        while (true) {
             controller.refresh()
             delay(200L)
         }
