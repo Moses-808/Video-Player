@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -109,8 +110,17 @@ internal fun LibraryExperience(
             LibrarySortMode.PROGRESS -> filtered.sortedByDescending { it.progress }
         }
     }
-    val folderVideos = remember(filtered, folder, sortMode) {
-        filtered.filter { it.relativePath?.trimEnd('/') == folder?.trimEnd('/') }.sortedWith(libraryComparator(sortMode))
+    val folderVideos = remember(videos, search, folder, sortMode) {
+        videos
+            .filter { it.relativePath?.trimEnd('/') == folder?.trimEnd('/') }
+            .filter { search.isBlank() || it.title.contains(search, true) }
+            .sortedWith(libraryComparator(sortMode))
+    }
+
+    LaunchedEffect(initialFolder) {
+        folder = initialFolder
+        view = if (initialFolder == null) LibraryView.HOME else LibraryView.COLLECTION
+        if (initialFolder != null) setSearch("")
     }
 
     BackHandler(enabled = view == LibraryView.COLLECTION) {
@@ -200,7 +210,8 @@ private fun LibraryHome(
         } else {
             items(folders, key = { "folder-$it" }) { path ->
                 val count = filtered.count { it.relativePath?.trimEnd('/') == path.trimEnd('/') }
-                CollectionRow(path, count) { openFolder(path) }
+                val preview = filtered.firstOrNull { it.relativePath?.trimEnd('/') == path.trimEnd('/') }
+                CollectionRow(path, count, preview) { openFolder(path) }
             }
         }
         item {
@@ -282,48 +293,69 @@ private fun LibrarySectionLabel(title: String, subtitle: String) {
 
 @Composable
 private fun ContinueShelf(videos: List<VideoItem>, open: (VideoItem) -> Unit) {
-    LazyColumn(modifier = Modifier.height(174.dp), userScrollEnabled = false) {
-        items(videos.take(3), key = { "continue-${it.id}" }) { video ->
-            ContinueRow(video, open)
-        }
-    }
-}
-
-@Composable
-private fun ContinueRow(video: VideoItem, open: (VideoItem) -> Unit) {
-    Card(
-        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().clickable { open(video) },
-        shape = RoundedCornerShape(18.dp)
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            LibraryThumb(video, Modifier.size(112.dp, 64.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(video.title, maxLines = 1, style = MaterialTheme.typography.titleSmall)
-                Text("${formatLibraryProgress(video)} remaining", fontSize = 10.sp, color = LibraryCyan)
-                LinearProgressIndicator(progress = { video.progress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
-            }
-            Icon(Icons.Outlined.PlayArrow, "Continue", tint = LibraryAccent)
-            Spacer(Modifier.width(8.dp))
+        items(videos.take(8), key = { "continue-${it.id}" }) { video ->
+            ContinueCard(video, open)
         }
     }
 }
 
 @Composable
-private fun CollectionRow(path: String, count: Int, onClick: () -> Unit) {
+private fun ContinueCard(video: VideoItem, open: (VideoItem) -> Unit) {
+    Card(
+        modifier = Modifier.width(250.dp).clickable { open(video) },
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(140.dp)) {
+                LibraryThumb(video, Modifier.fillMaxSize())
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(58.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .78f))))
+                )
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp),
+                    shape = RoundedCornerShape(50),
+                    color = Color.Black.copy(alpha = .58f)
+                ) {
+                    Icon(Icons.Outlined.PlayArrow, "Continue", tint = Color.White, modifier = Modifier.padding(8.dp).size(18.dp))
+                }
+            }
+            Column(Modifier.padding(horizontal = 13.dp, vertical = 11.dp)) {
+                Text(video.title, maxLines = 1, style = MaterialTheme.typography.titleSmall)
+                Text(formatLibraryProgress(video), fontSize = 10.sp, color = LibraryCyan)
+                LinearProgressIndicator(progress = { video.progress }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionRow(path: String, count: Int, preview: VideoItem?, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().clickable { onClick() },
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .65f)
     ) {
-        Row(Modifier.height(82.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(15.dp), color = LibraryAccent.copy(alpha = .14f)) {
-                Icon(Icons.Outlined.Folder, null, tint = LibraryAccent, modifier = Modifier.padding(12.dp).size(24.dp))
+        Row(Modifier.height(96.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (preview != null) {
+                LibraryThumb(preview, Modifier.size(126.dp, 76.dp))
+            } else {
+                Surface(shape = RoundedCornerShape(15.dp), color = LibraryAccent.copy(alpha = .14f)) {
+                    Icon(Icons.Outlined.Folder, null, tint = LibraryAccent, modifier = Modifier.padding(12.dp).size(24.dp))
+                }
             }
             Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                 Text(folderName(path), style = MaterialTheme.typography.titleSmall)
                 Text("$count videos", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("OPEN", fontSize = 9.sp, letterSpacing = 1.3.sp, color = LibraryCyan)
+            Text("OPEN", fontSize = 9.sp, letterSpacing = 1.3.sp, color = LibraryCyan, modifier = Modifier.padding(end = 7.dp))
         }
     }
 }
