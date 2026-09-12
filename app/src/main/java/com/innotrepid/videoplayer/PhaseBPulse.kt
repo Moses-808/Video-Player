@@ -47,7 +47,9 @@ internal fun PhaseBPulse(
 ) {
     val resume = videos.filter { it.isResumeable }.sortedByDescending { it.lastPlayedAtMs }
     val recent = videos.filter { it.lastPlayedAtMs > 0L }.sortedByDescending { it.lastPlayedAtMs }.take(10)
-    val folders = videos.mapNotNull { it.folderName }.groupingBy { it }.eachCount().toList().sortedBy { it.first.lowercase() }
+    val folders = videos.mapNotNull { video ->
+        video.relativePath?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() }
+    }.groupingBy { it }.eachCount().toList().sortedBy { it.first.lowercase() }
     LazyColumn(
         contentPadding = PaddingValues(top = 14.dp, bottom = 112.dp),
         verticalArrangement = Arrangement.spacedBy(26.dp)
@@ -215,7 +217,7 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
                 Card(Modifier.width(192.dp).clickable { open(path) }, RoundedCornerShape(23.dp)) {
                     Column(Modifier.padding(17.dp)) {
                         Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondary.copy(alpha = .11f)) { Icon(Icons.Outlined.Folder, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(10.dp)) }
-                        Spacer(Modifier.height(17.dp)); Text(path.trimEnd('/').substringAfterLast('/').ifBlank { "Unsorted" }, style = MaterialTheme.typography.titleMedium, maxLines = 1); Text("$count videos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                        Spacer(Modifier.height(17.dp)); Text(folderNameForPulse(path), style = MaterialTheme.typography.titleMedium, maxLines = 1); Text("$count videos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                     }
                 }
             }
@@ -271,6 +273,8 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
     if (bitmap != null) Image(bitmap!!.asImageBitmap(), video.title, modifier, contentScale = ContentScale.Crop)
     else Box(modifier.background(Brush.linearGradient(listOf(Color(0xFF181823), Color(0xFF2C2050)))))
 }
+
+private fun folderNameForPulse(path: String): String = path.trimEnd('/').substringAfterLast('/').ifBlank { "Unsorted" }
 
 private fun predictionReason(prediction: VideoPrediction): String = when {
     VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in prediction.reasons -> "A natural continuation"
