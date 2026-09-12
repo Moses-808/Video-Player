@@ -23,7 +23,10 @@ internal fun VideoPredictionPreview(
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
-            val previewPositionMs = VideoPreviewMoment.startPositionMs(video.durationMs)
+            val previewPositionMs = VideoPreviewMoment.startPositionMs(
+                durationMs = video.durationMs,
+                resumePositionMs = video.lastPositionMs
+            )
             setMediaItem(MediaItem.fromUri(video.uri), previewPositionMs)
             prepare()
             playWhenReady = true
