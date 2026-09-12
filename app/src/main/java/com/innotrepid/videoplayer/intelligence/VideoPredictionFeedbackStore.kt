@@ -20,14 +20,19 @@ class VideoPredictionFeedbackStore(context: Context) {
         prefs.edit().putInt(shownKey(mediaId), stats.shownCount + 1).apply()
     }
 
+    /**
+     * Acceptance is only valid after an exposure. Persisting that invariant here
+     * keeps every caller from accidentally manufacturing positive feedback.
+     */
     fun recordAccepted(mediaId: String) {
         val stats = stats(mediaId)
+        if (stats.acceptedCount >= stats.shownCount) return
         prefs.edit().putInt(acceptedKey(mediaId), stats.acceptedCount + 1).apply()
     }
 
     fun stats(mediaId: String): Stats = Stats(
-        shownCount = prefs.getInt(shownKey(mediaId), 0),
-        acceptedCount = prefs.getInt(acceptedKey(mediaId), 0)
+        shownCount = prefs.getInt(shownKey(mediaId), 0).coerceAtLeast(0),
+        acceptedCount = prefs.getInt(acceptedKey(mediaId), 0).coerceAtLeast(0)
     )
 
     fun adjustedConfidence(mediaId: String, baseConfidence: Float): Float {
