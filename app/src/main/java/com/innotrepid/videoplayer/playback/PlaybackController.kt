@@ -8,8 +8,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
@@ -121,7 +121,7 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
-        mutableState.value = mutableState.value.copy(errorMessage = null)
+        mutableState.value = PlaybackUiState()
         player.setMediaItem(
             androidx.media3.common.MediaItem.fromUri(uri),
             startPositionMs.coerceAtLeast(0L)
@@ -150,17 +150,23 @@ class PlaybackController(
         if (player.isPlaying) pause() else play()
     }
 
+    /** Seek without changing the user's current play/pause intent. */
     fun seekTo(positionMs: Long) {
         if (released) return
         canRetry = false
+        val wasPlaying = player.isPlaying
         player.seekTo(positionMs.coerceAtLeast(0L))
+        if (wasPlaying) player.playWhenReady = true
         publish()
     }
 
+    /** Relative seek without changing the user's current play/pause intent. */
     fun seekBy(deltaMs: Long) {
         if (released) return
         canRetry = false
+        val wasPlaying = player.isPlaying
         player.seekTo((player.currentPosition + deltaMs).coerceAtLeast(0L))
+        if (wasPlaying) player.playWhenReady = true
         publish()
     }
 
