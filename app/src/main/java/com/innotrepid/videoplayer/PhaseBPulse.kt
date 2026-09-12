@@ -1,14 +1,15 @@
 package com.innotrepid.videoplayer
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -124,29 +125,35 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
     val confidence = feedback.adjustedConfidence(hero.first.mediaId, hero.first.confidence)
     if (confidence < .45f) return
     LaunchedEffect(hero.first.mediaId) { feedback.recordShown(hero.first.mediaId) }
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(hero.first.mediaId) { revealed = true }
     Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
-        Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                Text("THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(3.dp))
-                Text("I have a hunch.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("Built from what you actually do.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+        AnimatedVisibility(visible = revealed, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 5 })) {
+            Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text("THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(3.dp))
+                    Text("I have a hunch.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text("Built from what you actually do.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                }
+                PulseConfidence(confidence)
             }
-            PulseConfidence(confidence)
         }
-        Box(
-            Modifier.fillMaxWidth().height(278.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(32.dp)).clickable { feedback.recordAccepted(hero.first.mediaId); open(hero.second) }
-        ) {
-            VideoPredictionPreview(hero.second, Modifier.fillMaxSize(), hero.first.previewPositionMs)
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .94f)))))
-            Column(Modifier.align(Alignment.BottomStart).padding(21.dp).padding(end = 70.dp)) {
-                Text(predictionReason(hero.first).uppercase(), color = MaterialTheme.colorScheme.secondary, fontSize = 8.sp, letterSpacing = 1.2.sp, maxLines = 1, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(5.dp))
-                Text(hero.second.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                Spacer(Modifier.height(4.dp))
-                Text("Your viewing pattern points here next.", color = Color.White.copy(alpha = .62f), fontSize = 10.sp)
+        AnimatedVisibility(visible = revealed, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 7 })) {
+            Box(
+                Modifier.fillMaxWidth().height(278.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(32.dp)).clickable { feedback.recordAccepted(hero.first.mediaId); open(hero.second) }
+            ) {
+                VideoPredictionPreview(hero.second, Modifier.fillMaxSize(), hero.first.previewPositionMs)
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .94f)))))
+                Column(Modifier.align(Alignment.BottomStart).padding(21.dp).padding(end = 70.dp)) {
+                    Text(predictionReason(hero.first).uppercase(), color = MaterialTheme.colorScheme.secondary, fontSize = 8.sp, letterSpacing = 1.2.sp, maxLines = 1, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(5.dp))
+                    Text(hero.second.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Your viewing pattern points here next.", color = Color.White.copy(alpha = .62f), fontSize = 10.sp)
+                }
+                FilledIconButton(onClick = { feedback.recordAccepted(hero.first.mediaId); open(hero.second) }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) { Icon(Icons.Outlined.PlayArrow, "Play predicted video") }
             }
-            FilledIconButton(onClick = { feedback.recordAccepted(hero.first.mediaId); open(hero.second) }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) { Icon(Icons.Outlined.PlayArrow, "Play predicted video") }
         }
         if (ranked.size > 1) LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(ranked.drop(1), key = { it.first.mediaId }) { (prediction, video) ->
@@ -237,6 +244,7 @@ private fun predictionReason(prediction: VideoPrediction): String = when {
     VideoPrediction.Reason.RESUMEABLE in prediction.reasons -> "You left this unfinished"
     VideoPrediction.Reason.REWATCHED in prediction.reasons -> "You've returned here before"
     VideoPrediction.Reason.RECENTLY_ENGAGED in prediction.reasons -> "Recent engagement"
-    VideoPrediction.Reason.PREVIOUSLY_COMPLETED in prediction.reasons -> "A familiar watch"
-    else -> "Natural viewing order"
+    VideoPrediction.Reason.PREVIOUSLY_COMPLETED in prediction.reasons -> "A familiar favorite"
+    VideoPrediction.Reason.RECENT_ABANDONMENT in prediction.reasons -> "Worth another look"
+    else -> "A natural next step"
 }
