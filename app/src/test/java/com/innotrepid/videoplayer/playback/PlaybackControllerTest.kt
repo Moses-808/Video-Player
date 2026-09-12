@@ -115,8 +115,8 @@ class PlaybackControllerTest {
         val controller = PlaybackController(player)
         val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
         verify(player).addListener(listener.capture())
-        val mediaUri = mock(Uri::class.java)
-        doReturn(MediaItem.fromUri(mediaUri)).`when`(player).currentMediaItem
+        val mediaItem = mock(MediaItem::class.java)
+        doReturn(mediaItem).`when`(player).currentMediaItem
 
         listener.value.onPlayerError(
             PlaybackException(
