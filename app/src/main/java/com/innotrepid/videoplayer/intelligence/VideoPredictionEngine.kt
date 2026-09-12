@@ -13,18 +13,6 @@ object VideoPredictionEngine {
         nowMs: Long = System.currentTimeMillis(),
         currentMediaId: String? = null
     ): List<VideoPrediction> {
-        if (videos.isEmpty() || events.isEmpty()) {
-            return VideoPredictor.predict(
-                videos = videos,
-                signals = emptyList(),
-                context = VideoPredictor.CandidateContext(
-                    currentMediaId = currentMediaId,
-                    currentFolderKey = videos.firstOrNull { it.id == currentMediaId }?.folderKey,
-                    nowMs = nowMs
-                )
-            )
-        }
-
         val contexts = videos.associate { video ->
             video.id to VideoBehaviorSignalInterpreter.VideoContext(
                 mediaId = video.id,
@@ -38,8 +26,7 @@ object VideoPredictionEngine {
             nowMs = nowMs
         )
         val current = videos.firstOrNull { it.id == currentMediaId }
-
-        return VideoPredictor.predict(
+        val predictions = VideoPredictor.predict(
             videos = videos,
             signals = signals,
             context = VideoPredictor.CandidateContext(
@@ -48,5 +35,14 @@ object VideoPredictionEngine {
                 nowMs = nowMs
             )
         )
+
+        return predictions.map { prediction ->
+            prediction.copy(
+                previewPositionMs = videos.firstOrNull { it.id == prediction.mediaId }?.let { video ->
+                    VideoPreviewMomentLearner.learnPositionMs(video.id, video.durationMs, events)
+                        ?: VideoPreviewMoment.startPositionMs(video.durationMs)
+                }
+            )
+        }
     }
 }
