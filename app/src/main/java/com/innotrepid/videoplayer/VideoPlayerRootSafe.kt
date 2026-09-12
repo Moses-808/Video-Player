@@ -119,16 +119,17 @@ fun VideoPlayerRootSafe() {
                     .background(MaterialTheme.colorScheme.background)
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
-                            onHorizontalDrag = { _, _ -> },
+                            onDragStart = { },
                             onDragEnd = { },
-                            onDragCancel = { }
-                        ) { _, amount ->
-                            if (abs(amount) > 100f) {
-                                val index = order.indexOf(screen)
-                                val next = (index + if (amount < 0) 1 else -1).coerceIn(0, order.lastIndex)
-                                if (next != index) navigateTo(order[next])
+                            onDragCancel = { },
+                            onHorizontalDrag = { _, amount ->
+                                if (abs(amount) > 100f) {
+                                    val index = order.indexOf(screen)
+                                    val next = (index + if (amount < 0) 1 else -1).coerceIn(0, order.lastIndex)
+                                    if (next != index) navigateTo(order[next])
+                                }
                             }
-                        }
+                        )
                     }
             ) {
                 AnimatedContent(
