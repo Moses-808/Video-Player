@@ -28,4 +28,20 @@ class VideoPreviewMomentTest {
     fun veryShortVideoNeverSeeksPastEnd() {
         assertEquals(0L, VideoPreviewMoment.startPositionMs(900L))
     }
+
+    @Test
+    fun resumePositionBecomesPreviewMoment() {
+        assertEquals(
+            42_000L,
+            VideoPreviewMoment.startPositionMs(300_000L, resumePositionMs = 42_000L)
+        )
+    }
+
+    @Test
+    fun resumeNearCreditsFallsBackToRepresentativeMoment() {
+        assertEquals(
+            30_000L,
+            VideoPreviewMoment.startPositionMs(600_000L, resumePositionMs = 580_000L)
+        )
+    }
 }
