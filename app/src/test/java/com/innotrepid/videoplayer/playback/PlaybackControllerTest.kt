@@ -120,7 +120,7 @@ class PlaybackControllerTest {
         listener.value.onPlayerError(
             PlaybackException(
                 "retry test",
-                RuntimeException("retry cause"),
+                null,
                 PlaybackException.ERROR_CODE_UNSPECIFIED,
             )
         )
