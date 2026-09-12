@@ -117,14 +117,10 @@ class PlaybackControllerTest {
         verify(player).addListener(listener.capture())
         val mediaItem = mock(MediaItem::class.java)
         doReturn(mediaItem).`when`(player).currentMediaItem
+        val error = mock(PlaybackException::class.java)
+        doReturn("retry test").`when`(error).message
 
-        listener.value.onPlayerError(
-            PlaybackException(
-                "retry test",
-                null,
-                PlaybackException.ERROR_CODE_UNSPECIFIED,
-            )
-        )
+        listener.value.onPlayerError(error)
 
         controller.retry()
 
