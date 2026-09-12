@@ -35,6 +35,28 @@ class PlaybackControllerTest {
     }
 
     @Test
+    fun seekPreservesPlayingIntent() {
+        `when`(player.isPlaying).thenReturn(true)
+        val controller = PlaybackController(player)
+        controller.seekTo(12_000L)
+        controller.seekBy(5_000L)
+        verify(player).seekTo(12_000L)
+        verify(player).seekTo(5_000L)
+        verify(player, org.mockito.Mockito.times(2)).playWhenReady = true
+        controller.release()
+    }
+
+    @Test
+    fun seekDoesNotForcePlaybackWhenAlreadyPaused() {
+        `when`(player.isPlaying).thenReturn(false)
+        val controller = PlaybackController(player)
+        controller.seekTo(12_000L)
+        controller.seekBy(5_000L)
+        verify(player, never()).playWhenReady = true
+        controller.release()
+    }
+
+    @Test
     fun speedAndVolumeAreClampedToSafeRanges() {
         val controller = PlaybackController(player)
         controller.setSpeed(0f)
