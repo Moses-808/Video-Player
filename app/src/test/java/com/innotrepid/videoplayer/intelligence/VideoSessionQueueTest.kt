@@ -36,6 +36,22 @@ class VideoSessionQueueTest {
     }
 
     @Test
+    fun sameNamedSeasonFoldersFromDifferentSeriesStayIsolated() {
+        val videos = listOf(
+            video("got1", "Episode 1", "Game of Thrones/Sn1"),
+            video("got2", "Episode 2", "Game of Thrones/Sn1"),
+            video("other1", "Episode 1", "Other Series/Sn1"),
+            video("other2", "Episode 2", "Other Series/Sn1")
+        )
+
+        val queue = VideoSessionQueue.create(videos, "got1")!!
+
+        assertEquals(listOf("Episode 1", "Episode 2"), queue.remaining.map { it.title }.let { listOf(queue.current!!.title) + it })
+        assertEquals("Episode 2", queue.next!!.title)
+        assertNull(queue.advance()!!.next)
+    }
+
+    @Test
     fun moveToAndAdvanceTrackSessionPosition() {
         val videos = listOf(video("1", "A", "Show"), video("2", "B", "Show"), video("3", "C", "Show"))
         val queue = VideoSessionQueue.create(videos, "1")!!
