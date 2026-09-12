@@ -9,6 +9,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Local append-only behavioral log for Momentum signals.
@@ -22,21 +24,26 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
     private val file = File(filesDir, "momentum_events.jsonl")
     private val legacyFile = File(filesDir, "momentum_events.json")
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val closed = AtomicBoolean(false)
 
     companion object {
         private const val SCHEMA_VERSION = 1
         private const val MAX_BYTES = 2L * 1024L * 1024L
         private const val TRIM_TO_LINES = 1_000
+        private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
     }
 
     init { migrateLegacyLog() }
 
     override fun emit(event: MomentumEvent) {
-        executor.execute {
-            runCatching {
-                ensureParent()
-                file.appendText(event.toJson().toString() + "\n")
-                trimIfNeeded()
+        if (closed.get()) return
+        runCatching {
+            executor.execute {
+                runCatching {
+                    ensureParent()
+                    file.appendText(event.toJson().toString() + "\n")
+                    trimIfNeeded()
+                }
             }
         }
     }
@@ -77,9 +84,23 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
         text.ifBlank { "# Video Player diagnostics\n" }
     }.getOrDefault("# Video Player diagnostics\n")
 
-    fun shutdown() { executor.shutdown() }
+    /**
+     * Stops accepting new events, lets already queued writes finish, then closes
+     * the executor. Repeated calls are safe.
+     */
+    fun shutdown() {
+        if (!closed.compareAndSet(false, true)) return
+        runCatching {
+            executor.shutdown()
+            executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        }
+    }
 
-    private fun flush() { executor.submit { }.get() }
+    private fun flush() {
+        if (executor.isShutdown) return
+        runCatching { executor.submit { }.get() }
+    }
+
     private fun ensureParent() { file.parentFile?.mkdirs() }
 
     private fun readLines(): List<String> = if (file.exists()) {
