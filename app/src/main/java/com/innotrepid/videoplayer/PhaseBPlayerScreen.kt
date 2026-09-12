@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,7 +73,7 @@ internal fun PhaseBPlayerScreen(
         }
     }
     LaunchedEffect(chromeVisible) {
-        if (chromeVisible) {
+        if (chromeVisible && state.errorMessage == null) {
             delay(3500L)
             chromeVisible = false
         }
@@ -142,10 +141,55 @@ internal fun PhaseBPlayerScreen(
 
                 if (next != null) {
                     val label = if (upNextExpanded) "Hide up next" else "Up next"
-                    Surface(Modifier.align(Alignment.BottomStart).padding(14.dp).clip(RoundedCornerShape(18.dp)).clickable { upNextExpanded = !upNextExpanded }, color = Color.Black.copy(alpha = .70f)) {
+                    Surface(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 14.dp, bottom = if (state.durationMs > 0L) 82.dp else 20.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { upNextExpanded = !upNextExpanded },
+                        color = Color.Black.copy(alpha = .70f)
+                    ) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.QueuePlayNext, label, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Column { Text("UP NEXT", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 1.4.sp); Text(next.title, color = Color.White, maxLines = if (upNextExpanded) 3 else 1, fontSize = 12.sp) }
+                            Icon(Icons.Outlined.QueuePlayNext, label, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text("UP NEXT", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 1.4.sp)
+                                Text(next.title, color = Color.White, maxLines = if (upNextExpanded) 3 else 1, fontSize = 12.sp)
+                            }
                         }
+                    }
+                }
+            }
+        }
+
+        if (state.isBuffering && state.errorMessage == null) {
+            Surface(
+                Modifier.align(Alignment.Center),
+                shape = RoundedCornerShape(50),
+                color = Color.Black.copy(alpha = .58f)
+            ) {
+                CircularProgressIndicator(Modifier.padding(14.dp).size(28.dp), color = Color.White, strokeWidth = 2.dp)
+            }
+        }
+
+        state.errorMessage?.let { message ->
+            Surface(
+                Modifier
+                    .align(Alignment.Center)
+                    .padding(28.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.Black.copy(alpha = .88f)
+            ) {
+                Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("Playback stopped", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Text(message, color = Color.White.copy(alpha = .72f), fontSize = 11.sp, maxLines = 3)
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = back) { Text("Back") }
+                        Button(onClick = { controller.retry(); chromeVisible = true }) { Text("Retry") }
                     }
                 }
             }
