@@ -16,10 +16,18 @@ object VideoPreviewMoment {
     fun startPositionMs(
         durationMs: Long,
         events: List<MomentumEvent> = emptyList(),
-        mediaId: String? = null
+        mediaId: String? = null,
+        resumePositionMs: Long = 0L
     ): Long {
+        if (durationMs <= 0L) return 0L
+
+        val resumePosition = resumePositionMs.coerceIn(0L, (durationMs - 1_000L).coerceAtLeast(0L))
+        if (resumePosition >= MIN_LEARNED_POSITION_MS && resumePosition <= durationMs * (1f - EDGE_MARGIN_FRACTION)) {
+            return resumePosition
+        }
+
         val fallback = fallback(durationMs)
-        if (durationMs <= 0L || mediaId == null || events.isEmpty()) return fallback
+        if (mediaId == null || events.isEmpty()) return fallback
 
         val learned = events.asSequence()
             .filter { it is MomentumEvent.VideoSeeked && it.mediaId == mediaId }
