@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -140,7 +141,13 @@ internal fun PhaseBPlayerScreen(
                         Icon(Icons.Outlined.Replay10, "Back 10 seconds")
                     }
                     FilledIconButton(onClick = controller::togglePlayPause, modifier = Modifier.size(68.dp)) {
-                        Icon(if (state.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (state.isPlaying) "Pause" else "Play", modifier = Modifier.size(34.dp))
+                        AnimatedContent(targetState = state.isPlaying, label = "playback control") { playing ->
+                            Icon(
+                                if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                if (playing) "Pause" else "Play",
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
                     }
                     FilledTonalIconButton(onClick = { controller.seekBy(10_000L) }, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Outlined.Forward10, "Forward 10 seconds")
