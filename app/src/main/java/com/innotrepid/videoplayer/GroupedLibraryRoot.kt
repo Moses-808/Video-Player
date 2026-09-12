@@ -1,5 +1,6 @@
 package com.innotrepid.videoplayer
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -44,17 +45,28 @@ fun GroupedLibraryRoot(
     add: () -> Unit
 ) {
     var openedFolder by remember(initialFolder) { mutableStateOf(initialFolder) }
-    val groups = remember(videos, search) {
+    val matchingVideos = remember(videos, search) {
         videos.filter { search.isBlank() || it.title.contains(search, true) || it.folderName?.contains(search, true) == true }
-            .groupBy { it.folderName?.takeIf(String::isNotBlank) ?: "Unsorted" }
-            .toList()
-            .sortedWith(compareBy({ it.first == "Unsorted" }, { it.first.lowercase() }))
     }
-    val visible = remember(videos, search, openedFolder) {
-        videos.filter { video ->
-            (openedFolder == null || video.folderName == openedFolder) &&
-                (search.isBlank() || video.title.contains(search, true) || video.folderName?.contains(search, true) == true)
-        }
+    val groups = remember(matchingVideos) {
+        matchingVideos
+            .mapNotNull { video -> video.relativePath?.takeIf(String::isNotBlank)?.let { it to video } }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { it.size > 1 }
+            .toList()
+            .sortedBy { it.first.lowercase() }
+    }
+    val folderVideoIds = remember(groups) { groups.flatMap { it.second }.map { it.id }.toSet() }
+    val standaloneVideos = remember(matchingVideos, folderVideoIds) {
+        matchingVideos.filterNot { it.id in folderVideoIds }
+    }
+    val visible = remember(matchingVideos, openedFolder) {
+        if (openedFolder == null) emptyList() else matchingVideos.filter { it.relativePath == openedFolder }
+    }
+
+    BackHandler(enabled = openedFolder != null) {
+        openedFolder = null
+        setSearch("")
     }
 
     AnimatedContent(targetState = openedFolder, transitionSpec = {
@@ -71,8 +83,9 @@ fun GroupedLibraryRoot(
                     }
                 }
                 item { Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("${groups.size} collections", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f)); Text("${videos.size} videos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) } }
-                if (groups.isEmpty()) item { EmptyLibrary(add, search.isNotBlank()) }
-                groups.forEach { (name, folderVideos) -> item(key = "folder-$name") { FolderTile(name, folderVideos) { openedFolder = name } } }
+                if (groups.isEmpty() && standaloneVideos.isEmpty()) item { EmptyLibrary(add, search.isNotBlank()) }
+                groups.forEach { (path, folderVideos) -> item(key = "folder-$path") { FolderTile(folderDisplayName(path), folderVideos) { openedFolder = path } } }
+                items(standaloneVideos, key = { it.id }) { video -> LibraryVideoRow(video, open, favorite) }
             }
         } else {
             val folderVideos = visible.sortedWith(compareBy({ naturalKey(it.title) }, { it.title.lowercase() }))
@@ -81,7 +94,7 @@ fun GroupedLibraryRoot(
                     Column(Modifier.padding(horizontal = 20.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { openedFolder = null; setSearch("") }) { Icon(Icons.Outlined.ArrowBack, "Back") }
-                            Column(Modifier.weight(1f)) { Text(folder, style = MaterialTheme.typography.headlineSmall); Text("${folderVideos.size} videos", color = folderCyan, fontSize = 11.sp) }
+                            Column(Modifier.weight(1f)) { Text(folderDisplayName(folder), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface); Text("${folderVideos.size} videos", color = folderCyan, fontSize = 11.sp) }
                             Icon(Icons.Outlined.FolderOpen, null, tint = folderAccent)
                         }
                         Spacer(Modifier.height(4.dp))
@@ -95,6 +108,8 @@ fun GroupedLibraryRoot(
     }
 }
 
+private fun folderDisplayName(path: String): String = path.trimEnd('/').substringAfterLast('/').ifBlank { "Unsorted" }
+
 @Composable private fun FolderTile(name: String, videos: List<VideoItem>, onClick: () -> Unit) {
     val preview = videos.firstOrNull()
     Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clickable { onClick() }, RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f)) {
@@ -103,7 +118,7 @@ fun GroupedLibraryRoot(
                 preview?.let { FolderThumbnail(it, Modifier.fillMaxSize()) }
                 Surface(Modifier.align(Alignment.TopStart).padding(10.dp), RoundedCornerShape(10.dp), Color.Black.copy(alpha = .55f)) { Icon(Icons.Outlined.Folder, null, tint = Color.White, modifier = Modifier.padding(6.dp).size(18.dp)) }
             }
-            Column(Modifier.padding(horizontal = 16.dp).weight(1f)) { Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 2); Spacer(Modifier.height(5.dp)); Text("${videos.size} videos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp); Text("OPEN COLLECTION", color = folderCyan, fontSize = 10.sp, letterSpacing = 1.sp) }
+            Column(Modifier.padding(horizontal = 16.dp).weight(1f)) { Text(name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 2); Spacer(Modifier.height(5.dp)); Text("${videos.size} videos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp); Text("OPEN COLLECTION", color = folderCyan, fontSize = 10.sp, letterSpacing = 1.sp) }
             Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 14.dp))
         }
     }
@@ -114,7 +129,7 @@ fun GroupedLibraryRoot(
         Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
             FolderThumbnail(video, Modifier.size(128.dp, 80.dp))
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) { Text(video.title, maxLines = 2); Text(video.folderName ?: "Unsorted", color = folderCyan, fontSize = 10.sp); if (video.isResumeable) LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().padding(top = 6.dp)) }
+            Column(Modifier.weight(1f)) { Text(video.title, maxLines = 2, color = MaterialTheme.colorScheme.onSurface); video.folderName?.let { Text(it, color = folderCyan, fontSize = 10.sp) }; if (video.isResumeable) LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().padding(top = 6.dp)) }
             IconButton(onClick = { favorite(video.id) }) { Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
@@ -131,7 +146,7 @@ fun GroupedLibraryRoot(
     Surface(Modifier.fillMaxWidth().padding(20.dp), RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .6f)) {
         Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(if (searching) Icons.Outlined.SearchOff else Icons.Outlined.VideoLibrary, null, tint = folderAccent, modifier = Modifier.size(34.dp))
-            Spacer(Modifier.height(10.dp)); Text(if (searching) "Nothing matches" else "Your library is empty", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(10.dp)); Text(if (searching) "Nothing matches" else "Your library is empty", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(if (searching) "Try another title or folder." else "Import a local video to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             if (!searching) { Spacer(Modifier.height(12.dp)); Button(onClick = add) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text("Import video") } }
         }
