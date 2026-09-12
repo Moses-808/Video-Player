@@ -84,7 +84,7 @@ class VideoPredictorTest {
         lastPlayedAtMs: Long = 0L
     ) = VideoItem(
         id = id,
-        uri = Uri.parse("content://videos/$id"),
+        uri = Uri.EMPTY,
         title = title,
         durationMs = durationMs,
         relativePath = folder,
