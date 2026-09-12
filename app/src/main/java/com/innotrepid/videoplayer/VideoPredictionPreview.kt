@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.innotrepid.videoplayer.intelligence.VideoPreviewMoment
 import com.innotrepid.videoplayer.library.VideoItem
 
 @Composable
@@ -22,7 +23,8 @@ internal fun VideoPredictionPreview(
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
-            setMediaItem(MediaItem.fromUri(video.uri))
+            val previewPositionMs = VideoPreviewMoment.startPositionMs(video.durationMs)
+            setMediaItem(MediaItem.fromUri(video.uri), previewPositionMs)
             prepare()
             playWhenReady = true
         }
