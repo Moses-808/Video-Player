@@ -20,7 +20,7 @@ object VideoPredictionEngine {
                 durationMs = video.durationMs
             )
         }
-        val signals = VideoBehaviorSignalInterpreter.interpret(
+        val signals = VideoBehaviorAnalyzer.analyze(
             events = events,
             contexts = contexts,
             nowMs = nowMs
