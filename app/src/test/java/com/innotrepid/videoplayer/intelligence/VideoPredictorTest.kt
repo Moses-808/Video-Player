@@ -5,6 +5,7 @@ import com.innotrepid.videoplayer.library.VideoItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class VideoPredictorTest {
     @Test
@@ -84,7 +85,7 @@ class VideoPredictorTest {
         lastPlayedAtMs: Long = 0L
     ) = VideoItem(
         id = id,
-        uri = Uri.EMPTY,
+        uri = mock(Uri::class.java),
         title = title,
         durationMs = durationMs,
         relativePath = folder,
