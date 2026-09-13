@@ -2,6 +2,7 @@ package com.innotrepid.videoplayer.library
 
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 
@@ -17,6 +18,7 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
     fun scan(library: VideoLibrary): Result {
         val discoveredIds = mutableSetOf<String>()
         var discovered = 0
+        var removed = 0
         val projection = buildList {
             add(MediaStore.Video.Media._ID)
             add(MediaStore.Video.Media.DISPLAY_NAME)
@@ -83,26 +85,35 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
                             ?: (addedAt.takeIf { it > 0L } ?: System.currentTimeMillis())
                     )
                 )
-                duplicateIds.forEach(library::remove)
+                duplicateIds.forEach {
+                    library.remove(it)
+                    removed++
+                }
                 discoveredIds += id
                 discovered++
             }
         }
 
         val staleIds = library.all()
+            .filter { it.id.startsWith("media:") && it.id !in discoveredIds }
             .map { it.id }
-            .filter { it.startsWith("media:") && it !in discoveredIds }
-        staleIds.forEach(library::remove)
+        staleIds.forEach {
+            library.remove(it)
+            removed++
+        }
 
         val missingImportedIds = library.all()
             .filter { !it.id.startsWith("media:") && !mediaIsReadable(it.uri) }
             .map { it.id }
-        missingImportedIds.forEach(library::remove)
+        missingImportedIds.forEach {
+            library.remove(it)
+            removed++
+        }
 
-        return Result(discovered = discovered, removed = staleIds.size + missingImportedIds.size)
+        return Result(discovered = discovered, removed = removed)
     }
 
-    private fun mediaIsReadable(uri: android.net.Uri): Boolean = runCatching {
+    private fun mediaIsReadable(uri: Uri): Boolean = runCatching {
         resolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
     }.getOrDefault(false)
 }
