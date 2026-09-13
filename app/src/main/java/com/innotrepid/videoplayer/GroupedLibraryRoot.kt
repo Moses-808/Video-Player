@@ -6,7 +6,7 @@ import com.innotrepid.videoplayer.library.VideoItem
 /**
  * Stable integration boundary for the Library screen.
  * Data, playback, import and favorites remain owned by the existing root;
- * the redesigned presentation lives in LibraryExperience.
+ * the redesigned presentation lives in LibraryExperienceV2.
  */
 @Composable
 fun GroupedLibraryRoot(
@@ -18,7 +18,7 @@ fun GroupedLibraryRoot(
     initialFolder: String? = null,
     add: () -> Unit
 ) {
-    LibraryExperience(
+    LibraryExperienceV2(
         videos = videos,
         search = search,
         setSearch = setSearch,
