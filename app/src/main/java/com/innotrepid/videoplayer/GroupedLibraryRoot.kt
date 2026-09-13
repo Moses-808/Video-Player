@@ -18,13 +18,17 @@ fun GroupedLibraryRoot(
     initialFolder: String? = null,
     add: () -> Unit
 ) {
+    val effectiveFolder = initialFolder?.trim()?.trimEnd('/')?.takeIf { folder ->
+        videos.any { it.relativePath?.trim()?.trimEnd('/') == folder }
+    }
+
     LibraryExperienceV2(
         videos = videos,
         search = search,
         setSearch = setSearch,
         open = open,
         favorite = favorite,
-        initialFolder = initialFolder,
+        initialFolder = effectiveFolder,
         add = add
     )
 }
