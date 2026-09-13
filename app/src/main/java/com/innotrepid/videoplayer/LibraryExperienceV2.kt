@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -243,7 +242,7 @@ private fun LibraryV2Masthead(count: Int, folders: Int, add: () -> Unit) {
         Column(Modifier.align(Alignment.BottomStart)) {
             Text("LIBRARY", color = Color.White.copy(alpha = .68f), fontSize = 10.sp, letterSpacing = 3.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(5.dp))
-            AdaptiveLibraryText("Your video world.", Color.White, MaterialTheme.typography.headlineLarge, 30.sp)
+            AdaptiveLibraryText("Your video world.", Color.White, MaterialTheme.typography.headlineLarge, 30.sp, 1)
             Spacer(Modifier.height(6.dp))
             Text("$count videos  •  $folders collections", color = Color.White.copy(alpha = .62f), fontSize = 10.sp)
         }
