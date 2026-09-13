@@ -10,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -89,6 +90,7 @@ internal fun LibraryExperienceV2(
     var view by remember(initialFolder) { mutableStateOf(if (initialFolder == null) LibraryV2View.HOME else LibraryV2View.COLLECTION) }
     var folder by remember(initialFolder) { mutableStateOf(initialFolder) }
     var sort by remember { mutableStateOf(LibraryV2Sort.RECENT) }
+    var previewingId by remember { mutableStateOf<String?>(null) }
 
     val normalizedFolder = folder?.trim()?.trimEnd('/')
     val filtered = remember(videos, search) {
@@ -114,12 +116,20 @@ internal fun LibraryExperienceV2(
     LaunchedEffect(initialFolder) {
         folder = initialFolder
         view = if (initialFolder == null) LibraryV2View.HOME else LibraryV2View.COLLECTION
+        previewingId = null
         if (initialFolder != null) setSearch("")
+    }
+
+    LaunchedEffect(videos, view, search) {
+        if (previewingId != null && videos.none { it.id == previewingId }) {
+            previewingId = null
+        }
     }
 
     BackHandler(enabled = view == LibraryV2View.COLLECTION) {
         view = LibraryV2View.HOME
         folder = null
+        previewingId = null
         setSearch("")
     }
 
@@ -144,9 +154,12 @@ internal fun LibraryExperienceV2(
                 setSort = { sort = it },
                 open = open,
                 favorite = favorite,
+                previewingId = previewingId,
+                setPreviewingId = { id -> previewingId = if (previewingId == id) null else id },
                 openFolder = {
                     folder = it
                     view = LibraryV2View.COLLECTION
+                    previewingId = null
                     setSearch("")
                 },
                 add = add
@@ -161,9 +174,12 @@ internal fun LibraryExperienceV2(
                 setSort = { sort = it },
                 open = open,
                 favorite = favorite,
+                previewingId = previewingId,
+                setPreviewingId = { id -> previewingId = if (previewingId == id) null else id },
                 back = {
                     view = LibraryV2View.HOME
                     folder = null
+                    previewingId = null
                     setSearch("")
                 },
                 add = add
@@ -185,6 +201,8 @@ private fun LibraryV2Home(
     setSort: (LibraryV2Sort) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
+    previewingId: String?,
+    setPreviewingId: (String) -> Unit,
     openFolder: (String) -> Unit,
     add: () -> Unit
 ) {
@@ -197,7 +215,7 @@ private fun LibraryV2Home(
 
         if (search.isBlank() && continueWatching.isNotEmpty()) {
             item { LibraryV2Section("CONTINUE WATCHING", "Pick up exactly where you left off") }
-            item { LibraryV2ContinueShelf(continueWatching, open) }
+            item { LibraryV2ContinueShelf(continueWatching, open, previewingId, setPreviewingId) }
         }
 
         item { LibraryV2Section("COLLECTIONS", "Your folders, reframed as destinations") }
@@ -225,7 +243,9 @@ private fun LibraryV2Home(
         if (ordered.isEmpty()) {
             item { LibraryV2Empty(search.isNotBlank(), add) }
         } else {
-            items(ordered, key = { it.id }) { video -> LibraryV2VideoCard(video, open, favorite) }
+            items(ordered, key = { it.id }) { video ->
+                LibraryV2VideoCard(video, open, favorite, previewingId, setPreviewingId)
+            }
         }
     }
 }
@@ -284,18 +304,36 @@ private fun LibraryV2Section(title: String, subtitle: String) {
 }
 
 @Composable
-private fun LibraryV2ContinueShelf(videos: List<VideoItem>, open: (VideoItem) -> Unit) {
+private fun LibraryV2ContinueShelf(
+    videos: List<VideoItem>,
+    open: (VideoItem) -> Unit,
+    previewingId: String?,
+    setPreviewingId: (String) -> Unit
+) {
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(videos.take(8), key = { "resume-${it.id}" }) { LibraryV2ContinueCard(it, open) }
+        items(videos.take(8), key = { "resume-${it.id}" }) { video ->
+            LibraryV2ContinueCard(video, open, previewingId == video.id, { setPreviewingId(video.id) })
+        }
     }
 }
 
 @Composable
-private fun LibraryV2ContinueCard(video: VideoItem, open: (VideoItem) -> Unit) {
-    Card(Modifier.width(268.dp).clickable { open(video) }, RoundedCornerShape(24.dp)) {
+private fun LibraryV2ContinueCard(
+    video: VideoItem,
+    open: (VideoItem) -> Unit,
+    previewing: Boolean,
+    activatePreview: () -> Unit
+) {
+    Card(
+        Modifier
+            .width(268.dp)
+            .combinedClickable(onClick = { open(video) }, onLongClick = activatePreview),
+        RoundedCornerShape(24.dp)
+    ) {
         Column {
             Box(Modifier.fillMaxWidth().height(150.dp)) {
-                LibraryV2Thumb(video, Modifier.fillMaxSize())
+                if (previewing) LibraryPreviewSurface(video, Modifier.fillMaxSize(), video.lastPositionMs)
+                else LibraryV2Thumb(video, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxWidth().height(72.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .84f)))))
                 Surface(Modifier.align(Alignment.BottomEnd).padding(10.dp), RoundedCornerShape(50), color = Color.Black.copy(alpha = .56f)) {
                     Icon(Icons.Outlined.PlayArrow, "Continue", tint = Color.White, modifier = Modifier.padding(8.dp).size(19.dp))
@@ -303,7 +341,7 @@ private fun LibraryV2ContinueCard(video: VideoItem, open: (VideoItem) -> Unit) {
             }
             Column(Modifier.padding(horizontal = 13.dp, vertical = 11.dp)) {
                 AdaptiveLibraryText(video.title, MaterialTheme.colorScheme.onSurface, MaterialTheme.typography.titleSmall, 16.sp, 1)
-                Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
+                Text(if (previewing) "Previewing from your position" else formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
                 LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().padding(top = 7.dp))
             }
         }
@@ -351,11 +389,25 @@ private fun LibraryV2SortChip(sort: LibraryV2Sort, setSort: (LibraryV2Sort) -> U
 }
 
 @Composable
-private fun LibraryV2VideoCard(video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
-    Card(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clickable { open(video) }, RoundedCornerShape(23.dp)) {
+private fun LibraryV2VideoCard(
+    video: VideoItem,
+    open: (VideoItem) -> Unit,
+    favorite: (String) -> Unit,
+    previewingId: String?,
+    setPreviewingId: (String) -> Unit
+) {
+    val previewing = previewingId == video.id
+    Card(
+        Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth()
+            .combinedClickable(onClick = { open(video) }, onLongClick = { setPreviewingId(video.id) }),
+        RoundedCornerShape(23.dp)
+    ) {
         Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(138.dp, 86.dp).clip(RoundedCornerShape(17.dp))) {
-                LibraryV2Thumb(video, Modifier.fillMaxSize())
+                if (previewing) LibraryPreviewSurface(video, Modifier.fillMaxSize())
+                else LibraryV2Thumb(video, Modifier.fillMaxSize())
                 if (video.isResumeable) {
                     LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().align(Alignment.BottomCenter))
                 }
@@ -363,7 +415,8 @@ private fun LibraryV2VideoCard(video: VideoItem, open: (VideoItem) -> Unit, favo
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 AdaptiveLibraryText(video.title, MaterialTheme.colorScheme.onSurface, MaterialTheme.typography.titleSmall, 18.sp, 2)
                 video.folderName?.let { Text(it, maxLines = 1, fontSize = 9.sp, color = MaterialTheme.colorScheme.secondary) }
-                if (video.isResumeable) Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (video.isResumeable) Text(if (previewing) "Previewing" else formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else if (previewing) Text("Previewing", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { favorite(video.id) }) {
                 Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -382,6 +435,8 @@ private fun LibraryV2Collection(
     setSort: (LibraryV2Sort) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
+    previewingId: String?,
+    setPreviewingId: (String) -> Unit,
     back: () -> Unit,
     add: () -> Unit
 ) {
@@ -403,7 +458,9 @@ private fun LibraryV2Collection(
             }
         }
         if (videos.isEmpty()) item { LibraryV2Empty(search.isNotBlank(), add) }
-        else items(videos, key = { it.id }) { LibraryV2VideoCard(it, open, favorite) }
+        else items(videos, key = { it.id }) { video ->
+            LibraryV2VideoCard(video, open, favorite, previewingId, setPreviewingId)
+        }
     }
 }
 
