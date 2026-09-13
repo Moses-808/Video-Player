@@ -36,7 +36,7 @@ object VideoPredictionEngine {
             )
         )
 
-        return predictions.map { prediction ->
+        val enriched = predictions.map { prediction ->
             prediction.copy(
                 previewPositionMs = videos.firstOrNull { it.id == prediction.mediaId }?.let { video ->
                     VideoPredictionPreviewSelector.select(
@@ -47,5 +47,16 @@ object VideoPredictionEngine {
                 }
             )
         }
+
+        VideoPredictionAutoAdvanceState.publish(
+            enriched.map { prediction ->
+                VideoPredictionAutoAdvancePolicy.Candidate(
+                    mediaId = prediction.mediaId,
+                    confidence = prediction.confidence
+                )
+            }
+        )
+
+        return enriched
     }
 }
