@@ -60,14 +60,17 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
                 val mime = cursor.getString(mimeIndex)
                 val relativePath = if (relativePathIndex >= 0) cursor.getString(relativePathIndex) else null
                 val existing = library.find(id)
+                val duplicateIds = library.idsForUri(uri).filter { it != id }
+                val base = existing ?: duplicateIds.firstOrNull()?.let(library::find) ?: VideoItem(
+                    id = id,
+                    uri = uri,
+                    title = title,
+                    addedAtMs = addedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+                )
 
                 library.upsert(
-                    (existing ?: VideoItem(
+                    base.copy(
                         id = id,
-                        uri = uri,
-                        title = title,
-                        addedAtMs = addedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-                    )).copy(
                         uri = uri,
                         title = title,
                         durationMs = duration,
@@ -75,9 +78,12 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
                         dateModifiedMs = modifiedAt,
                         relativePath = relativePath,
                         mimeType = mime,
-                        addedAtMs = existing?.addedAtMs ?: (addedAt.takeIf { it > 0L } ?: System.currentTimeMillis())
+                        addedAtMs = existing?.addedAtMs
+                            ?: base.addedAtMs.takeIf { it > 0L }
+                            ?: (addedAt.takeIf { it > 0L } ?: System.currentTimeMillis())
                     )
                 )
+                duplicateIds.forEach(library::remove)
                 discoveredIds += id
                 discovered++
             }
