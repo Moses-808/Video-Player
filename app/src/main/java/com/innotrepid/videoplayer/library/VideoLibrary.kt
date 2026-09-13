@@ -21,6 +21,12 @@ class VideoLibrary(private val file: File) {
 
     @Synchronized fun find(id: String): VideoItem? = items[id]
 
+    /** Returns all stored records pointing at the same underlying media URI. */
+    @Synchronized
+    fun idsForUri(uri: Uri): List<String> = items.values
+        .filter { it.uri == uri }
+        .map { it.id }
+
     @Synchronized
     fun upsert(item: VideoItem) { items[item.id] = item; save() }
 
