@@ -148,7 +148,7 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
                 Column(Modifier.weight(1f)) {
                     Text("THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(3.dp))
-                    Text("I have a hunch.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text("I think this is next.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                     Text("Built from what you actually do.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                 }
                 PulseConfidence(confidence)
@@ -172,7 +172,7 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
                     Spacer(Modifier.height(5.dp))
                     Text(hero.second.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
                     Spacer(Modifier.height(4.dp))
-                    Text("Your viewing pattern points here next.", color = Color.White.copy(alpha = .62f), fontSize = 10.sp)
+                    Text(predictionExplanation(hero.first), color = Color.White.copy(alpha = .62f), fontSize = 10.sp, maxLines = 2)
                 }
                 FilledIconButton(onClick = {
                     pressed = true
@@ -284,4 +284,14 @@ private fun predictionReason(prediction: VideoPrediction): String = when {
     VideoPrediction.Reason.PREVIOUSLY_COMPLETED in prediction.reasons -> "A familiar favorite"
     VideoPrediction.Reason.RECENT_ABANDONMENT in prediction.reasons -> "Worth another look"
     else -> "A natural next step"
+}
+
+private fun predictionExplanation(prediction: VideoPrediction): String = when {
+    VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in prediction.reasons -> "The way you moved through this collection makes this the strongest next step."
+    VideoPrediction.Reason.RESUMEABLE in prediction.reasons -> "You already started this, and your unfinished viewing is pulling it back into focus."
+    VideoPrediction.Reason.REWATCHED in prediction.reasons -> "You've come back to this before, which makes another return more likely."
+    VideoPrediction.Reason.RECENTLY_ENGAGED in prediction.reasons -> "Your recent viewing activity is pointing toward this one."
+    VideoPrediction.Reason.PREVIOUSLY_COMPLETED in prediction.reasons -> "You've finished this before, so Momentum sees a familiar path worth revisiting."
+    VideoPrediction.Reason.RECENT_ABANDONMENT in prediction.reasons -> "You left this one recently; Momentum thinks it may still be unfinished business."
+    else -> "Your recent viewing pattern makes this a natural next step."
 }
