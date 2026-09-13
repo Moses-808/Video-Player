@@ -136,19 +136,13 @@ fun VideoPlayerRootSafe() {
                     targetState = screen,
                     transitionSpec = {
                         val forward = screenDirection > 0
-                        (slideInHorizontally(
-                            animationSpec = tween(320),
-                            initialOffsetX = { width -> if (forward) width else -width }
-                        ) + fadeIn(animationSpec = tween(220))) togetherWith
-                            (slideOutHorizontally(
-                                animationSpec = tween(320),
-                                targetOffsetX = { width -> if (forward) -width else width }
-                            ) + fadeOut(animationSpec = tween(180)))
+                        (slideInHorizontally(animationSpec = tween(320), initialOffsetX = { width -> if (forward) width else -width }) + fadeIn(animationSpec = tween(220))) togetherWith
+                            (slideOutHorizontally(animationSpec = tween(320), targetOffsetX = { width -> if (forward) -width else width }) + fadeOut(animationSpec = tween(180)))
                     },
                     label = "phase-b-screen"
                 ) { target ->
                     when (target) {
-                        PhaseBScreen.PULSE -> PhaseBPulse(videos, predictions, permission, { permissionLauncher.launch(phaseBVideoPermissions()) }, vm::toggleFavorite, openVideo) { folder -> pendingFolder = folder; navigateTo(PhaseBScreen.LIBRARY) }
+                        PhaseBScreen.PULSE -> VisonatePulse(videos, predictions, permission, { permissionLauncher.launch(phaseBVideoPermissions()) }, vm::toggleFavorite, openVideo) { folder -> pendingFolder = folder; navigateTo(PhaseBScreen.LIBRARY) }
                         PhaseBScreen.LIBRARY -> GroupedLibraryRoot(videos, search, { search = it }, openVideo, vm::toggleFavorite, pendingFolder) { picker.launch(arrayOf("video/*")) }
                         PhaseBScreen.SAVED -> PhaseBSaved(videos.filter { it.isFavorite }, openVideo, vm::toggleFavorite)
                         PhaseBScreen.SETTINGS -> PhaseBSettings(lightMode, { lightMode = it; prefs.edit().putBoolean("light_mode", it).apply() }, intelligenceEnabled, { intelligenceEnabled = it; prefs.edit().putBoolean("intelligence_enabled", it).apply() }, learnFromHistory, { learnFromHistory = it; prefs.edit().putBoolean("learn_from_history", it).apply() }, autoAdvance, { autoAdvance = it; prefs.edit().putBoolean("auto_advance", it).apply() }, permission, { permissionLauncher.launch(phaseBVideoPermissions()) }, { picker.launch(arrayOf("video/*")) }, { exportLauncher.launch("video-player-diagnostics.jsonl") }, { scope.launch(Dispatchers.IO) { recorder.clear() } }, { feedbackStore.clear(); predictions = emptyList() }, { showAbout = true })
@@ -157,7 +151,7 @@ fun VideoPlayerRootSafe() {
                 PhaseBBottomBar(screen) { if (it != PhaseBScreen.LIBRARY) pendingFolder = null; navigateTo(it) }
             }
         }
-        if (showAbout) PhaseBAboutDialog { showAbout = false }
+        if (showAbout) VisonateAboutDialog { showAbout = false }
     }
 }
 
@@ -188,24 +182,12 @@ fun VideoPlayerRootSafe() {
             PhaseBSettingRow(Icons.Outlined.DeleteSweep, "Clear diagnostics", "Delete local event history") { TextButton(onClick = clearDiagnostics) { Text("CLEAR") } }
         } }
         item { PhaseBSettingCard("About") {
-            PhaseBSettingRow(Icons.Outlined.Info, "About", "Version, product identity and credits") { TextButton(onClick = openAbout) { Text("VIEW") } }
+            PhaseBSettingRow(Icons.Outlined.Info, "About Visonate", "How to use it, what is implemented, privacy and licence") { TextButton(onClick = openAbout) { Text("VIEW") } }
         } }
     }
 }
 
-@Composable private fun PhaseBAboutDialog(onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = onDismiss) { Text("DONE") } }, icon = { Icon(Icons.Outlined.AutoAwesome, null, tint = PhaseBViolet) }, title = { Text("Video Player") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("A local video player designed to become more useful the more naturally you use it.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Momentum", style = MaterialTheme.typography.titleMedium)
-        Text("Anticipatory intelligence for your viewing flow.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(4.dp))
-        Text("Developed by Innotrepid", style = MaterialTheme.typography.labelLarge)
-        Text("© 2026 Innotrepid. All rights reserved.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Your library, playback history and intelligence data stay local to the device unless you explicitly export diagnostics.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    } })
-}
-
-@Composable private fun PhaseBSettingCard(title: String, content: @Composable ColumnScope.() -> Unit) { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp), RoundedCornerShape(24.dp)) { Column(Modifier.padding(vertical = 8.dp)) { Text(title, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), color = PhaseBViolet, style = MaterialTheme.typography.titleMedium); content() } } }
+@Composable private fun PhaseBSettingCard(title: String, content: @Composable ColumnScope.() -> Unit) { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp), RoundedCornerShape(24.dp)) { Column(Modifier.padding(vertical = 8.dp)) { Text(title, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium); content() } } }
 @Composable private fun PhaseBSettingRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, action: @Composable (() -> Unit)) { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text(title); Text(subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; action() } }
 private fun hasPhaseBVideoPermission(context: Context): Boolean = if (Build.VERSION.SDK_INT >= 33) androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.READ_MEDIA_VIDEO") == android.content.pm.PackageManager.PERMISSION_GRANTED else androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.READ_EXTERNAL_STORAGE") == android.content.pm.PackageManager.PERMISSION_GRANTED
 private fun phaseBVideoPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 33) arrayOf("android.permission.READ_MEDIA_VIDEO") else arrayOf("android.permission.READ_EXTERNAL_STORAGE")
