@@ -54,10 +54,10 @@ internal fun LibraryPreviewSurface(
             contentColor = Color.White
         ) {
             Text(
-                "PREVIEW",
+                "HOLD TO PREVIEW",
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                 fontSize = 8.sp,
-                letterSpacing = 1.4.sp,
+                letterSpacing = 1.2.sp,
                 style = MaterialTheme.typography.labelSmall
             )
         }
