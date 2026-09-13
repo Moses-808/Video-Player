@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,7 +50,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -120,10 +120,8 @@ internal fun LibraryExperienceV2(
         if (initialFolder != null) setSearch("")
     }
 
-    LaunchedEffect(videos, view, search) {
-        if (previewingId != null && videos.none { it.id == previewingId }) {
-            previewingId = null
-        }
+    LaunchedEffect(videos) {
+        if (previewingId != null && videos.none { it.id == previewingId }) previewingId = null
     }
 
     BackHandler(enabled = view == LibraryV2View.COLLECTION) {
@@ -154,15 +152,15 @@ internal fun LibraryExperienceV2(
                 setSort = { sort = it },
                 open = open,
                 favorite = favorite,
-                previewingId = previewingId,
-                setPreviewingId = { id -> previewingId = if (previewingId == id) null else id },
                 openFolder = {
+                    previewingId = null
                     folder = it
                     view = LibraryV2View.COLLECTION
-                    previewingId = null
                     setSearch("")
                 },
-                add = add
+                add = add,
+                previewingId = previewingId,
+                setPreviewingId = { previewingId = it }
             )
         } else {
             LibraryV2Collection(
@@ -174,15 +172,15 @@ internal fun LibraryExperienceV2(
                 setSort = { sort = it },
                 open = open,
                 favorite = favorite,
-                previewingId = previewingId,
-                setPreviewingId = { id -> previewingId = if (previewingId == id) null else id },
                 back = {
+                    previewingId = null
                     view = LibraryV2View.HOME
                     folder = null
-                    previewingId = null
                     setSearch("")
                 },
-                add = add
+                add = add,
+                previewingId = previewingId,
+                setPreviewingId = { previewingId = it }
             )
         }
     }
@@ -201,10 +199,10 @@ private fun LibraryV2Home(
     setSort: (LibraryV2Sort) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
-    previewingId: String?,
-    setPreviewingId: (String) -> Unit,
     openFolder: (String) -> Unit,
-    add: () -> Unit
+    add: () -> Unit,
+    previewingId: String?,
+    setPreviewingId: (String?) -> Unit
 ) {
     LazyColumn(
         contentPadding = PaddingValues(top = 14.dp, bottom = 112.dp),
@@ -243,9 +241,7 @@ private fun LibraryV2Home(
         if (ordered.isEmpty()) {
             item { LibraryV2Empty(search.isNotBlank(), add) }
         } else {
-            items(ordered, key = { it.id }) { video ->
-                LibraryV2VideoCard(video, open, favorite, previewingId, setPreviewingId)
-            }
+            items(ordered, key = { it.id }) { video -> LibraryV2VideoCard(video, open, favorite, previewingId, setPreviewingId) }
         }
     }
 }
@@ -303,20 +299,15 @@ private fun LibraryV2Section(title: String, subtitle: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryV2ContinueShelf(
-    videos: List<VideoItem>,
-    open: (VideoItem) -> Unit,
-    previewingId: String?,
-    setPreviewingId: (String) -> Unit
-) {
+private fun LibraryV2ContinueShelf(videos: List<VideoItem>, open: (VideoItem) -> Unit, previewingId: String?, setPreviewingId: (String?) -> Unit) {
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(videos.take(8), key = { "resume-${it.id}" }) { video ->
-            LibraryV2ContinueCard(video, open, previewingId == video.id, { setPreviewingId(video.id) })
-        }
+        items(videos.take(8), key = { "resume-${it.id}" }) { LibraryV2ContinueCard(it, open, previewingId == it.id, { setPreviewingId(it.id) }) }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryV2ContinueCard(
     video: VideoItem,
@@ -388,13 +379,14 @@ private fun LibraryV2SortChip(sort: LibraryV2Sort, setSort: (LibraryV2Sort) -> U
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryV2VideoCard(
     video: VideoItem,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
     previewingId: String?,
-    setPreviewingId: (String) -> Unit
+    setPreviewingId: (String?) -> Unit
 ) {
     val previewing = previewingId == video.id
     Card(
@@ -415,8 +407,7 @@ private fun LibraryV2VideoCard(
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 AdaptiveLibraryText(video.title, MaterialTheme.colorScheme.onSurface, MaterialTheme.typography.titleSmall, 18.sp, 2)
                 video.folderName?.let { Text(it, maxLines = 1, fontSize = 9.sp, color = MaterialTheme.colorScheme.secondary) }
-                if (video.isResumeable) Text(if (previewing) "Previewing" else formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                else if (previewing) Text("Previewing", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (video.isResumeable) Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { favorite(video.id) }) {
                 Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -435,10 +426,10 @@ private fun LibraryV2Collection(
     setSort: (LibraryV2Sort) -> Unit,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
-    previewingId: String?,
-    setPreviewingId: (String) -> Unit,
     back: () -> Unit,
-    add: () -> Unit
+    add: () -> Unit,
+    previewingId: String?,
+    setPreviewingId: (String?) -> Unit
 ) {
     LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
@@ -458,9 +449,7 @@ private fun LibraryV2Collection(
             }
         }
         if (videos.isEmpty()) item { LibraryV2Empty(search.isNotBlank(), add) }
-        else items(videos, key = { it.id }) { video ->
-            LibraryV2VideoCard(video, open, favorite, previewingId, setPreviewingId)
-        }
+        else items(videos, key = { it.id }) { LibraryV2VideoCard(it, open, favorite, previewingId, setPreviewingId) }
     }
 }
 
