@@ -6,7 +6,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Video Player"
+        android:label="Visonate"
         android:supportsRtl="true"
         android:theme="@style/Theme.VideoPlayer">
         <activity
