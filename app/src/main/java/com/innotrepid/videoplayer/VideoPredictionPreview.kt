@@ -28,6 +28,7 @@ import androidx.media3.ui.PlayerView
 import com.innotrepid.videoplayer.intelligence.VideoPreviewMoment
 import com.innotrepid.videoplayer.library.VideoItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -37,15 +38,17 @@ internal fun VideoPredictionPreview(
     previewPositionMs: Long? = null
 ) {
     val context = LocalContext.current
+    val previewStartMs = remember(video.id, video.uri, previewPositionMs, video.durationMs, video.lastPositionMs) {
+        previewPositionMs ?: VideoPreviewMoment.startPositionMs(
+            durationMs = video.durationMs,
+            resumePositionMs = video.lastPositionMs
+        )
+    }
     val previewPlayer = remember(video.id, video.uri, previewPositionMs) {
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
-            val position = previewPositionMs ?: VideoPreviewMoment.startPositionMs(
-                durationMs = video.durationMs,
-                resumePositionMs = video.lastPositionMs
-            )
-            setMediaItem(MediaItem.fromUri(video.uri), position)
+            setMediaItem(MediaItem.fromUri(video.uri), previewStartMs)
             prepare()
             playWhenReady = true
         }
@@ -67,6 +70,23 @@ internal fun VideoPredictionPreview(
         }
     }
 
+    LaunchedEffect(previewPlayer, previewFailed, previewStartMs, video.durationMs) {
+        if (previewFailed) return@LaunchedEffect
+        val previewEndMs = if (video.durationMs > previewStartMs) {
+            (previewStartMs + 8_000L).coerceAtMost(video.durationMs)
+        } else {
+            null
+        }
+        if (previewEndMs == null || previewEndMs <= previewStartMs) return@LaunchedEffect
+        while (true) {
+            delay(250L)
+            if (!previewPlayer.isPlaying) continue
+            if (previewPlayer.currentPosition >= previewEndMs) {
+                previewPlayer.seekTo(previewStartMs)
+            }
+        }
+    }
+
     LaunchedEffect(previewFailed, video.uri, previewPositionMs, video.lastPositionMs, video.durationMs) {
         if (!previewFailed) return@LaunchedEffect
         fallbackBitmap = withContext(Dispatchers.IO) {
@@ -74,12 +94,8 @@ internal fun VideoPredictionPreview(
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(context, video.uri)
-                    val positionMs = previewPositionMs ?: VideoPreviewMoment.startPositionMs(
-                        durationMs = video.durationMs,
-                        resumePositionMs = video.lastPositionMs
-                    )
                     retriever.getFrameAtTime(
-                        positionMs.coerceAtLeast(0L) * 1_000L,
+                        previewStartMs.coerceAtLeast(0L) * 1_000L,
                         MediaMetadataRetriever.OPTION_CLOSEST_SYNC
                     )
                 } finally {
