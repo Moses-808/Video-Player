@@ -8,8 +8,16 @@ package com.innotrepid.videoplayer.intelligence
  * the selected item; this class only decides the destination queue state.
  */
 object PlaybackTransitionCoordinator {
+    /**
+     * Advances using Momentum when the latest prediction snapshot is strong
+     * enough; otherwise this is exactly the deterministic queue transition.
+     */
     fun next(queue: VideoSessionQueue?, sourceId: String): VideoSessionQueue? =
-        VideoSessionTransitionPolicy.next(queue, sourceId)
+        predictiveNext(
+            queue = queue,
+            sourceId = sourceId,
+            predictions = VideoPredictionAutoAdvanceState.current()
+        )
 
     fun previous(queue: VideoSessionQueue?, sourceId: String): VideoSessionQueue? =
         VideoSessionTransitionPolicy.previous(queue, sourceId)
