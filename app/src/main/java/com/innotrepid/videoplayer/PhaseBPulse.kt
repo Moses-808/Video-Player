@@ -137,7 +137,13 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
     val hero = ranked.first()
     val confidence = feedback.adjustedConfidence(hero.first.mediaId, hero.first.confidence)
     if (confidence < .45f) return
-    LaunchedEffect(hero.first.mediaId) { feedback.recordShown(hero.first.mediaId) }
+
+    // Every prediction that is actually presented is an exposure. Acceptance is
+    // recorded only from a prediction that has already crossed this boundary.
+    LaunchedEffect(ranked.map { it.first.mediaId }) {
+        ranked.forEach { (prediction, _) -> feedback.recordShown(prediction.mediaId) }
+    }
+
     var revealed by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
     LaunchedEffect(hero.first.mediaId) { revealed = true }
@@ -183,7 +189,10 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
         }
         if (ranked.size > 1) LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(ranked.drop(1), key = { it.first.mediaId }) { (prediction, video) ->
-                Column(Modifier.width(184.dp).clickable { open(video) }) {
+                Column(Modifier.width(184.dp).clickable {
+                    feedback.recordAccepted(prediction.mediaId)
+                    open(video)
+                }) {
                     Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).clip(RoundedCornerShape(20.dp))) { PulseThumb(video, Modifier.fillMaxSize()) }
                     Spacer(Modifier.height(7.dp)); Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleSmall); Text(predictionReason(prediction), color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, maxLines = 1)
                 }
