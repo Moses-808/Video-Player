@@ -303,7 +303,7 @@ private fun LibraryV2ContinueCard(video: VideoItem, open: (VideoItem) -> Unit) {
             }
             Column(Modifier.padding(horizontal = 13.dp, vertical = 11.dp)) {
                 AdaptiveLibraryText(video.title, MaterialTheme.colorScheme.onSurface, MaterialTheme.typography.titleSmall, 16.sp, 1)
-                Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = LibraryV2Cyan)
+                Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
                 LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().padding(top = 7.dp))
             }
         }
@@ -328,7 +328,7 @@ private fun LibraryV2CollectionCard(path: String, count: Int, preview: VideoItem
                     AdaptiveLibraryText(libraryV2FolderName(path), Color.White, MaterialTheme.typography.titleMedium, 20.sp, 1)
                     Text("$count videos", color = Color.White.copy(alpha = .66f), fontSize = 10.sp)
                 }
-                Text("OPEN", color = LibraryV2Cyan, fontSize = 8.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+                Text("OPEN", color = MaterialTheme.colorScheme.secondary, fontSize = 8.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -362,11 +362,11 @@ private fun LibraryV2VideoCard(video: VideoItem, open: (VideoItem) -> Unit, favo
             }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 AdaptiveLibraryText(video.title, MaterialTheme.colorScheme.onSurface, MaterialTheme.typography.titleSmall, 18.sp, 2)
-                video.folderName?.let { Text(it, maxLines = 1, fontSize = 9.sp, color = LibraryV2Cyan) }
+                video.folderName?.let { Text(it, maxLines = 1, fontSize = 9.sp, color = MaterialTheme.colorScheme.secondary) }
                 if (video.isResumeable) Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { favorite(video.id) }) {
-                Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) LibraryV2Pink else MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -392,9 +392,9 @@ private fun LibraryV2Collection(
                     IconButton(onClick = back) { Icon(Icons.Outlined.ArrowBack, "Back") }
                     Column(Modifier.weight(1f)) {
                         AdaptiveLibraryText(libraryV2FolderName(folder.orEmpty()), MaterialTheme.colorScheme.onBackground, MaterialTheme.typography.headlineSmall, 28.sp, 2)
-                        Text("${videos.size} videos in this collection", fontSize = 10.sp, color = LibraryV2Cyan)
+                        Text("${videos.size} videos in this collection", fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
                     }
-                    Icon(Icons.Outlined.FolderOpen, null, tint = LibraryV2Accent)
+                    Icon(Icons.Outlined.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(Modifier.height(7.dp))
                 LibraryV2Search(search, setSearch)
@@ -411,7 +411,7 @@ private fun LibraryV2Collection(
 private fun LibraryV2Empty(searching: Boolean, add: () -> Unit) {
     Surface(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), RoundedCornerShape(25.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f)) {
         Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(if (searching) Icons.Outlined.SearchOff else Icons.Outlined.VideoLibrary, null, tint = LibraryV2Accent, modifier = Modifier.size(34.dp))
+            Icon(if (searching) Icons.Outlined.SearchOff else Icons.Outlined.VideoLibrary, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
             Spacer(Modifier.height(10.dp))
             Text(if (searching) "Nothing matches" else "Your library is empty", style = MaterialTheme.typography.titleMedium)
             Text(if (searching) "Try another title or collection." else "Import a local video to begin.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
