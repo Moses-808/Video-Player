@@ -91,7 +91,7 @@ internal fun LibraryExperienceV2(
     var view by remember(initialFolder) { mutableStateOf(if (initialFolder == null) LibraryV2View.HOME else LibraryV2View.COLLECTION) }
     var folder by remember(initialFolder) { mutableStateOf(initialFolder) }
     var sort by remember { mutableStateOf(LibraryV2Sort.RECENT) }
-    var previewingId by remember { mutableStateOf<String?>(null) }
+    var previewingKey by remember { mutableStateOf<String?>(null) }
 
     val normalizedFolder = folder?.trim()?.trimEnd('/')
     val filtered = remember(videos, search) {
@@ -117,18 +117,21 @@ internal fun LibraryExperienceV2(
     LaunchedEffect(initialFolder) {
         folder = initialFolder
         view = if (initialFolder == null) LibraryV2View.HOME else LibraryV2View.COLLECTION
-        previewingId = null
+        previewingKey = null
         if (initialFolder != null) setSearch("")
     }
 
     LaunchedEffect(videos) {
-        if (previewingId != null && videos.none { it.id == previewingId }) previewingId = null
+        if (previewingKey != null) {
+            val previewId = previewingKey!!.substringAfter(':')
+            if (videos.none { it.id == previewId }) previewingKey = null
+        }
     }
 
     BackHandler(enabled = view == LibraryV2View.COLLECTION) {
         view = LibraryV2View.HOME
         folder = null
-        previewingId = null
+        previewingKey = null
         setSearch("")
     }
 
@@ -154,14 +157,14 @@ internal fun LibraryExperienceV2(
                 open = open,
                 favorite = favorite,
                 openFolder = {
-                    previewingId = null
+                    previewingKey = null
                     folder = it
                     view = LibraryV2View.COLLECTION
                     setSearch("")
                 },
                 add = add,
-                previewingId = previewingId,
-                setPreviewingId = { previewingId = it }
+                previewingKey = previewingKey,
+                setPreviewingKey = { previewingKey = it }
             )
         } else {
             LibraryV2Collection(
@@ -174,14 +177,14 @@ internal fun LibraryExperienceV2(
                 open = open,
                 favorite = favorite,
                 back = {
-                    previewingId = null
+                    previewingKey = null
                     view = LibraryV2View.HOME
                     folder = null
                     setSearch("")
                 },
                 add = add,
-                previewingId = previewingId,
-                setPreviewingId = { previewingId = it }
+                previewingKey = previewingKey,
+                setPreviewingKey = { previewingKey = it }
             )
         }
     }
@@ -202,8 +205,8 @@ private fun LibraryV2Home(
     favorite: (String) -> Unit,
     openFolder: (String) -> Unit,
     add: () -> Unit,
-    previewingId: String?,
-    setPreviewingId: (String?) -> Unit
+    previewingKey: String?,
+    setPreviewingKey: (String?) -> Unit
 ) {
     LazyColumn(
         contentPadding = PaddingValues(top = 14.dp, bottom = 112.dp),
@@ -214,7 +217,7 @@ private fun LibraryV2Home(
 
         if (search.isBlank() && continueWatching.isNotEmpty()) {
             item { LibraryV2Section("CONTINUE WATCHING", "Pick up exactly where you left off") }
-            item { LibraryV2ContinueShelf(continueWatching, open, previewingId, setPreviewingId) }
+            item { LibraryV2ContinueShelf(continueWatching, open, previewingKey, setPreviewingKey) }
         }
 
         item { LibraryV2Section("COLLECTIONS", "Your folders, reframed as destinations") }
@@ -242,7 +245,7 @@ private fun LibraryV2Home(
         if (ordered.isEmpty()) {
             item { LibraryV2Empty(search.isNotBlank(), add) }
         } else {
-            items(ordered, key = { it.id }) { video -> LibraryV2VideoCard(video, open, favorite, previewingId, setPreviewingId) }
+            items(ordered, key = { it.id }) { video -> LibraryV2VideoCard(video, open, favorite, previewingKey, setPreviewingKey) }
         }
     }
 }
@@ -302,9 +305,12 @@ private fun LibraryV2Section(title: String, subtitle: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryV2ContinueShelf(videos: List<VideoItem>, open: (VideoItem) -> Unit, previewingId: String?, setPreviewingId: (String?) -> Unit) {
+private fun LibraryV2ContinueShelf(videos: List<VideoItem>, open: (VideoItem) -> Unit, previewingKey: String?, setPreviewingKey: (String?) -> Unit) {
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(videos.take(8), key = { "resume-${it.id}" }) { LibraryV2ContinueCard(it, open, previewingId == it.id, { setPreviewingId(it.id) }) }
+        items(videos.take(8), key = { "resume-${it.id}" }) { video ->
+            val key = "continue:${video.id}"
+            LibraryV2ContinueCard(video, open, previewingKey == key, { setPreviewingKey(if (previewingKey == key) null else key) })
+        }
     }
 }
 
@@ -386,15 +392,16 @@ private fun LibraryV2VideoCard(
     video: VideoItem,
     open: (VideoItem) -> Unit,
     favorite: (String) -> Unit,
-    previewingId: String?,
-    setPreviewingId: (String?) -> Unit
+    previewingKey: String?,
+    setPreviewingKey: (String?) -> Unit
 ) {
-    val previewing = previewingId == video.id
+    val key = "video:${video.id}"
+    val previewing = previewingKey == key
     Card(
         Modifier
             .padding(horizontal = 20.dp)
             .fillMaxWidth()
-            .combinedClickable(onClick = { open(video) }, onLongClick = { setPreviewingId(video.id) }),
+            .combinedClickable(onClick = { open(video) }, onLongClick = { setPreviewingKey(if (previewing) null else key) }),
         RoundedCornerShape(23.dp)
     ) {
         Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -429,8 +436,8 @@ private fun LibraryV2Collection(
     favorite: (String) -> Unit,
     back: () -> Unit,
     add: () -> Unit,
-    previewingId: String?,
-    setPreviewingId: (String?) -> Unit
+    previewingKey: String?,
+    setPreviewingKey: (String?) -> Unit
 ) {
     LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
@@ -450,7 +457,7 @@ private fun LibraryV2Collection(
             }
         }
         if (videos.isEmpty()) item { LibraryV2Empty(search.isNotBlank(), add) }
-        else items(videos, key = { it.id }) { LibraryV2VideoCard(it, open, favorite, previewingId, setPreviewingId) }
+        else items(videos, key = { it.id }) { LibraryV2VideoCard(it, open, favorite, previewingKey, setPreviewingKey) }
     }
 }
 
