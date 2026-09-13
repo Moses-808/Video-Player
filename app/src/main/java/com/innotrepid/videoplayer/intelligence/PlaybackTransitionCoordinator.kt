@@ -36,11 +36,11 @@ object PlaybackTransitionCoordinator {
             predictions = predictions
         ) ?: return null
 
-        return if (deterministic?.current?.id == chosenId) {
-            deterministic
-        } else {
-            queue?.moveTo(chosenId)
-        }
+        if (deterministic?.current?.id == chosenId) return deterministic
+
+        // A prediction outside the current session must never break the
+        // deterministic folder/series contract.
+        return queue?.moveTo(chosenId) ?: deterministic
     }
 
     /**
