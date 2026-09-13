@@ -94,6 +94,15 @@ class MediaStoreVideoScanner(private val resolver: ContentResolver) {
             .filter { it.startsWith("media:") && it !in discoveredIds }
         staleIds.forEach(library::remove)
 
-        return Result(discovered = discovered, removed = staleIds.size)
+        val missingImportedIds = library.all()
+            .filter { !it.id.startsWith("media:") && !mediaIsReadable(it.uri) }
+            .map { it.id }
+        missingImportedIds.forEach(library::remove)
+
+        return Result(discovered = discovered, removed = staleIds.size + missingImportedIds.size)
     }
+
+    private fun mediaIsReadable(uri: android.net.Uri): Boolean = runCatching {
+        resolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+    }.getOrDefault(false)
 }
