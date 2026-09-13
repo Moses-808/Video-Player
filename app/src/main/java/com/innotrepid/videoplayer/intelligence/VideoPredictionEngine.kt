@@ -39,8 +39,11 @@ object VideoPredictionEngine {
         return predictions.map { prediction ->
             prediction.copy(
                 previewPositionMs = videos.firstOrNull { it.id == prediction.mediaId }?.let { video ->
-                    VideoPreviewMomentLearner.learnPositionMs(video.id, video.durationMs, events)
-                        ?: VideoPreviewMoment.startPositionMs(video.durationMs)
+                    VideoPredictionPreviewSelector.select(
+                        prediction = prediction,
+                        video = video,
+                        events = events
+                    )
                 }
             )
         }
