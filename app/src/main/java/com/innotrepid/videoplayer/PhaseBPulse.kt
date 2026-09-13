@@ -276,22 +276,34 @@ private fun PulseNext(videos: List<VideoItem>, predictions: List<VideoPrediction
 
 private fun folderNameForPulse(path: String): String = path.trimEnd('/').substringAfterLast('/').ifBlank { "Unsorted" }
 
-private fun predictionReason(prediction: VideoPrediction): String = when {
-    VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in prediction.reasons -> "A natural continuation"
-    VideoPrediction.Reason.RESUMEABLE in prediction.reasons -> "You left this unfinished"
-    VideoPrediction.Reason.REWATCHED in prediction.reasons -> "You've returned here before"
-    VideoPrediction.Reason.RECENTLY_ENGAGED in prediction.reasons -> "Recent engagement"
-    VideoPrediction.Reason.PREVIOUSLY_COMPLETED in prediction.reasons -> "A familiar favorite"
-    VideoPrediction.Reason.RECENT_ABANDONMENT in prediction.reasons -> "Worth another look"
-    else -> "A natural next step"
+private fun predictionReason(prediction: VideoPrediction): String {
+    val reasons = prediction.reasons.toSet()
+    return when {
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons && VideoPrediction.Reason.RESUMEABLE in reasons -> "You were already on this path"
+        VideoPrediction.Reason.REWATCHED in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "You keep coming back to this"
+        VideoPrediction.Reason.RESUMEABLE in reasons -> "You left this unfinished"
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons -> "A natural continuation"
+        VideoPrediction.Reason.REWATCHED in reasons -> "You've returned here before"
+        VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "It's been on your mind lately"
+        VideoPrediction.Reason.PREVIOUSLY_COMPLETED in reasons -> "A familiar favorite"
+        VideoPrediction.Reason.RECENT_ABANDONMENT in reasons -> "Worth another look"
+        else -> "A natural next step"
+    }
 }
 
-private fun predictionExplanation(prediction: VideoPrediction): String = when {
-    VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in prediction.reasons -> "The way you moved through this collection makes this the strongest next step."
-    VideoPrediction.Reason.RESUMEABLE in prediction.reasons -> "You already started this, and your unfinished viewing is pulling it back into focus."
-    VideoPrediction.Reason.REWATCHED in prediction.reasons -> "You've come back to this before, which makes another return more likely."
-    VideoPrediction.Reason.RECENTLY_ENGAGED in prediction.reasons -> "Your recent viewing activity is pointing toward this one."
-    VideoPrediction.Reason.PREVIOUSLY_COMPLETED in prediction.reasons -> "You've finished this before, so Momentum sees a familiar path worth revisiting."
-    VideoPrediction.Reason.RECENT_ABANDONMENT in prediction.reasons -> "You left this one recently; Momentum thinks it may still be unfinished business."
-    else -> "Your recent viewing pattern makes this a natural next step."
+private fun predictionExplanation(prediction: VideoPrediction): String {
+    val reasons = prediction.reasons.toSet()
+    return when {
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons && VideoPrediction.Reason.RESUMEABLE in reasons -> "You were moving through this collection and already started this one, so Momentum sees two signals pointing the same way."
+        VideoPrediction.Reason.REWATCHED in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "You've returned to this before, and your recent viewing keeps bringing it back into the picture."
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "Your recent viewing stayed close to this collection, making this feel like the next natural move."
+        VideoPrediction.Reason.RESUMEABLE in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "You started this and your recent activity suggests it is still part of what you want to watch."
+        VideoPrediction.Reason.RESUMEABLE in reasons -> "You already started this, so Momentum is keeping your unfinished viewing close at hand."
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons -> "The way you moved through this collection makes this a natural next step."
+        VideoPrediction.Reason.REWATCHED in reasons -> "You've chosen this before, which gives Momentum a strong reason to expect another return."
+        VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "Your recent viewing activity is pointing toward this one."
+        VideoPrediction.Reason.PREVIOUSLY_COMPLETED in reasons -> "You've finished this before, and familiar choices can become part of your next viewing rhythm."
+        VideoPrediction.Reason.RECENT_ABANDONMENT in reasons -> "You left this one recently, so Momentum is keeping it in view without assuming you want it immediately."
+        else -> "Your viewing pattern makes this a plausible next step, even without a single strong signal."
+    }
 }
