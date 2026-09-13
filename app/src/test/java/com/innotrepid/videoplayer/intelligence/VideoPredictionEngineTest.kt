@@ -44,6 +44,44 @@ class VideoPredictionEngineTest {
     }
 
     @Test
+    fun resumePredictionPreviewsFromWhereViewerLeftOff() {
+        val videos = listOf(
+            video("resume", "Resume", "show").copy(lastPositionMs = 142_000L, lastPlayedAtMs = 5_000L),
+            video("other", "Other", "movies")
+        )
+
+        val predictions = VideoPredictionEngine.predict(
+            videos = videos,
+            events = emptyList(),
+            nowMs = 6_000L
+        )
+        val resume = predictions.firstOrNull { it.mediaId == "resume" }
+
+        assertEquals(142_000L, resume?.previewPositionMs)
+        assertTrue(resume?.reasons?.contains(VideoPrediction.Reason.RESUMEABLE) == true)
+    }
+
+    @Test
+    fun learnedMomentRemainsPreferredForRewatchPrediction() {
+        val videos = listOf(
+            video("v", "Video", "show").copy(lastPlayedAtMs = 5_000L),
+            video("other", "Other", "movies")
+        )
+        val events = listOf(
+            MomentumEvent.VideoSeeked("v", 0L, 150_000L, 1_000L),
+            MomentumEvent.VideoSeeked("v", 5_000L, 155_000L, 2_000L),
+            MomentumEvent.VideoStarted("v", 0L, 3_000L),
+            MomentumEvent.VideoStarted("v", 0L, 4_000L)
+        )
+
+        val prediction = VideoPredictionEngine.predict(videos, events, nowMs = 5_000L)
+            .first { it.mediaId == "v" }
+
+        assertTrue(prediction.reasons.contains(VideoPrediction.Reason.REWATCHED))
+        assertEquals(152_500L, prediction.previewPositionMs)
+    }
+
+    @Test
     fun emptyEventHistoryStillProvidesNaturalFallback() {
         val videos = listOf(
             video("a", "A", "show"),
