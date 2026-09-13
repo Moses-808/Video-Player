@@ -31,9 +31,15 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
             val title = queryDisplayName(resolver, uri)
                 ?: uri.lastPathSegment?.substringAfterLast('/')
                 ?: "Untitled video"
-            val id = uri.toString().hashCode().toString(16)
-            val existing = library.find(id)
-            library.upsert((existing ?: VideoItem(id = id, uri = uri, title = title)).copy(uri = uri, title = title))
+            val existingIds = library.idsForUri(uri)
+            val existing = existingIds.firstNotNullOfOrNull(library::find)
+            val id = existing?.id ?: uri.toString().hashCode().toString(16)
+            val item = (existing ?: VideoItem(id = id, uri = uri, title = title)).copy(
+                uri = uri,
+                title = title
+            )
+            library.upsert(item)
+            existingIds.filter { it != id }.forEach(library::remove)
             _videos.value = library.all()
         }
     }
