@@ -55,14 +55,27 @@ internal fun VisonatePulse(
             .sortedByDescending { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) }
             .take(5)
     }
-    val heroPrediction = ranked.firstOrNull()?.takeIf { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) >= .45f }
+    val learnedHero = ranked.firstOrNull()?.takeIf { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) >= .45f }
+    val defaultHeroVideo = videos
+        .filter { it.durationMs >= 5 * 60 * 1000L }
+        .maxByOrNull { it.durationMs }
+    val heroPrediction = learnedHero ?: defaultHeroVideo?.let { video ->
+        VideoPrediction(
+            mediaId = video.id,
+            score = 0f,
+            confidence = 0f,
+            reasons = emptyList(),
+            previewPositionMs = null
+        )
+    }?.let { prediction -> prediction to (byId[prediction.mediaId] ?: defaultHeroVideo) }
     val heroVideo = heroPrediction?.second
+    val isDefaultHero = learnedHero == null && heroVideo != null
     val heroConfidence = heroPrediction?.let { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) } ?: 0f
 
     LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         item { PulseIdentity(videos.size, recent.firstOrNull(), heroPrediction, heroConfidence, open) }
         if (!permission) item { PulseConnectCard(request) }
-        if (heroPrediction != null && heroVideo != null) item { VisonatePredictionHero(heroPrediction, heroVideo, heroConfidence, open, feedback) }
+        if (heroPrediction != null && heroVideo != null) item { VisonatePredictionHero(heroPrediction, heroVideo, heroConfidence, open, feedback, isDefaultHero) }
         if (resume.isNotEmpty()) item { VisonateShelf("Continue your thread", "Unfinished videos stay close.", resume, open, favorite, true) }
         if (recent.isNotEmpty()) item { VisonateShelf("Your trail", "Recent attention, kept within reach.", recent, open, favorite, false) }
         if (folders.isNotEmpty()) item { VisonateSpaces(folders, videos, library) }
@@ -93,21 +106,21 @@ internal fun VisonatePulse(
     }
 }
 
-@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore) {
+@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore, isDefaultHero: Boolean) {
     val model = prediction.first
-    LaunchedEffect(model.mediaId) { feedback.recordShown(model.mediaId) }
+    LaunchedEffect(model.mediaId, isDefaultHero) { if (!isDefaultHero) feedback.recordShown(model.mediaId) }
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (pressed) .985f else 1f, tween(150), label = "visonatePredictionScale")
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) { Text("THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold); Text("I think this is next.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("Not a list. A signal.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)) { Column(Modifier.padding(horizontal = 11.dp, vertical = 6.dp), horizontalAlignment = Alignment.End) { Text("CONFIDENCE", fontSize = 7.sp, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("${(confidence * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) } }
+            Column(Modifier.weight(1f)) { Text(if (isDefaultHero) "FEATURED PREVIEW" else "THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold); Text(if (isDefaultHero) "Start with this.", else "I think this is next.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text(if (isDefaultHero) "A long-form preview chosen for Pulse." else "Not a list. A signal.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)) { Column(Modifier.padding(horizontal = 11.dp, vertical = 6.dp), horizontalAlignment = Alignment.End) { Text(if (isDefaultHero) "PULSE FEATURE" else "CONFIDENCE", fontSize = 7.sp, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(if (isDefaultHero) "PINNED" else "${(confidence * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) } }
         }
-        Box(Modifier.fillMaxWidth().height(292.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(RoundedCornerShape(31.dp)).clickable { pressed = true; feedback.recordAccepted(model.mediaId); open(video) }) {
+        Box(Modifier.fillMaxWidth().height(292.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(RoundedCornerShape(31.dp)).clickable { pressed = true; if (!isDefaultHero) feedback.recordAccepted(model.mediaId); open(video) }) {
             VideoPredictionPreview(video, Modifier.fillMaxSize(), model.previewPositionMs)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .95f)))))
             Column(Modifier.align(Alignment.BottomStart).padding(21.dp).padding(end = 72.dp)) { Text(predictionReason(model).uppercase(), color = MaterialTheme.colorScheme.secondary, fontSize = 8.sp, letterSpacing = 1.2.sp, maxLines = 1, fontWeight = FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(video.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis); Spacer(Modifier.height(4.dp)); Text(predictionExplanation(model), color = Color.White.copy(alpha = .63f), fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            FilledIconButton(onClick = { pressed = true; feedback.recordAccepted(model.mediaId); open(video) }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) { Icon(Icons.Outlined.PlayArrow, "Play predicted video") }
+            FilledIconButton(onClick = { pressed = true; if (!isDefaultHero) feedback.recordAccepted(model.mediaId); open(video) }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) { Icon(Icons.Outlined.PlayArrow, "Play predicted video") }
         }
     }
 }

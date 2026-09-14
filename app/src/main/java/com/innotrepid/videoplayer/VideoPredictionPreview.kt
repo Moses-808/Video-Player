@@ -100,7 +100,7 @@ internal fun VideoPredictionPreview(
         previewPlayer.playWhenReady = true
         previewPlayer.play()
         val previewEndMs = if (video.durationMs > previewStartMs) {
-            (previewStartMs + 8_000L).coerceAtMost(video.durationMs)
+            (previewStartMs + 15_000L).coerceAtMost(video.durationMs)
         } else {
             null
         }
