@@ -52,6 +52,6 @@ Visonate is proprietary software. © 2026 Innotrepid. All rights reserved. See `
 
 ## Status
 
-**Visonate 0.4.0 — Momentum-enabled local video player**
+**Visonate 0.4.1 — Momentum-enabled local video player**
 
 The foundation is intentionally stable. Future development will focus on deeper anticipation and product refinement rather than replacing the playback core.
