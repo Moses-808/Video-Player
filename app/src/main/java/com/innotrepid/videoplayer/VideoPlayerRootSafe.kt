@@ -118,15 +118,30 @@ fun VideoPlayerRootSafe() {
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .pointerInput(Unit) {
+                        var dragDistance = 0f
+                        var swipeTriggered = false
                         detectHorizontalDragGestures(
-                            onDragStart = { },
-                            onDragEnd = { },
-                            onDragCancel = { },
+                            onDragStart = {
+                                dragDistance = 0f
+                                swipeTriggered = false
+                            },
+                            onDragEnd = {
+                                dragDistance = 0f
+                                swipeTriggered = false
+                            },
+                            onDragCancel = {
+                                dragDistance = 0f
+                                swipeTriggered = false
+                            },
                             onHorizontalDrag = { _, amount ->
-                                if (abs(amount) > 100f) {
-                                    val index = order.indexOf(screen)
-                                    val next = (index + if (amount < 0) 1 else -1).coerceIn(0, order.lastIndex)
-                                    if (next != index) navigateTo(order[next])
+                                if (!swipeTriggered) {
+                                    dragDistance += amount
+                                    if (abs(dragDistance) >= 80f) {
+                                        val index = order.indexOf(screen)
+                                        val next = (index + if (dragDistance < 0f) 1 else -1).coerceIn(0, order.lastIndex)
+                                        if (next != index) navigateTo(order[next])
+                                        swipeTriggered = true
+                                    }
                                 }
                             }
                         )
