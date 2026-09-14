@@ -44,7 +44,20 @@ class PlaybackController(
     private var canRetry = false
     private var activeMediaUri: Uri? = null
 
+    /**
+     * URI confirmed by ExoPlayer's media-item transition callback.
+     * This is intentionally separate from activeMediaUri: during a switch,
+     * player callbacks from the previous item must not be treated as events
+     * for the newly requested item until ExoPlayer confirms the transition.
+     */
+    private var callbackMediaUri: Uri? = null
+
     private val listener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+            callbackMediaUri = mediaItem?.localConfiguration?.uri
+            if (callbackMediaUri == activeMediaUri && !released) publish()
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (!hasActiveMediaCallback()) return
             if (isPlaying) {
@@ -123,6 +136,7 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
+        callbackMediaUri = null
         mutableState.value = PlaybackUiState()
         activeMediaUri = uri
         player.stop()
@@ -204,6 +218,7 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
+        callbackMediaUri = null
         player.stop()
         player.clearMediaItems()
         activeMediaUri = null
@@ -227,6 +242,7 @@ class PlaybackController(
         }
         released = true
         activeMediaUri = null
+        callbackMediaUri = null
         player.removeListener(listener)
         player.release()
     }
@@ -239,7 +255,8 @@ class PlaybackController(
         !released &&
             !switchingMedia &&
             player.currentMediaItem != null &&
-            player.currentMediaItem?.localConfiguration?.uri == activeMediaUri
+            player.currentMediaItem?.localConfiguration?.uri == activeMediaUri &&
+            callbackMediaUri == activeMediaUri
 
     private fun publish() {
         if (released) return
