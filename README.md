@@ -37,6 +37,8 @@ The product relationship is:
 
 Visonate 0.4.1 — Momentum-enabled local video player. The `main` branch is the canonical source of truth.
 
+Build validation baseline restored to the last successful Priority 2 build.
+
 ## License
 
 Copyright (c) 2026 Innotrepid. All rights reserved.
