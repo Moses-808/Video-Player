@@ -26,7 +26,7 @@ jobs:
           text = text.replace('''@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore) {''', '''@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore, isDefaultHero: Boolean) {''', 1)
           text = text.replace('LaunchedEffect(model.mediaId) { feedback.recordShown(model.mediaId) }', 'LaunchedEffect(model.mediaId, isDefaultHero) { if (!isDefaultHero) feedback.recordShown(model.mediaId) }', 1)
           text = text.replace('Text("THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary,', 'Text(if (isDefaultHero) "FEATURED PREVIEW" else "THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary,', 1)
-          text = text.replace('Text("I think this is next.",', 'Text(if (isDefaultHero) "Start with this.[0m" else "I think this is next.",', 1)
+          text = text.replace('Text("I think this is next.",', 'Text(if (isDefaultHero) "Start with this.", else "I think this is next.",', 1)
           text = text.replace('Text("Not a list. A signal.",', 'Text(if (isDefaultHero) "A long-form preview chosen for Pulse." else "Not a list. A signal.",', 1)
           text = text.replace('Text("CONFIDENCE", fontSize = 7.sp,', 'Text(if (isDefaultHero) "PULSE FEATURE" else "CONFIDENCE", fontSize = 7.sp,', 1)
           text = text.replace('Text("${(confidence * 100).toInt()}%", fontSize = 13.sp,', 'Text(if (isDefaultHero) "PINNED" else "${(confidence * 100).toInt()}%", fontSize = 13.sp,', 1)
