@@ -30,8 +30,22 @@ class VideoLibrary(private val file: File) {
     @Synchronized
     fun upsert(item: VideoItem) { items[item.id] = item; save() }
 
+    /** Apply a set of metadata changes with one disk write instead of one write per item. */
     @Synchronized
-    fun remove(id: String) { items.remove(id); save() }
+    fun upsertAll(values: Iterable<VideoItem>) {
+        values.forEach { items[it.id] = it }
+        save()
+    }
+
+    @Synchronized
+    fun remove(id: String) { if (items.remove(id) != null) save() }
+
+    @Synchronized
+    fun removeAll(ids: Iterable<String>) {
+        var changed = false
+        ids.forEach { changed = items.remove(it) != null || changed }
+        if (changed) save()
+    }
 
     @Synchronized
     fun toggleFavorite(id: String) {
@@ -110,45 +124,10 @@ class VideoLibrary(private val file: File) {
         append(']')
     }
 
-    private fun StringBuilder.separator() {
-        if (length > 1) append(',')
-    }
-
-    private fun StringBuilder.stringField(name: String, value: String) {
-        separator()
-        append('"').append(name).append("\":\"").append(escapeJson(value)).append('"')
-    }
-
-    private fun StringBuilder.nullableField(name: String, value: String?) {
-        separator()
-        append('"').append(name).append("\":")
-        if (value == null) append("null") else append('"').append(escapeJson(value)).append('"')
-    }
-
-    private fun StringBuilder.numberField(name: String, value: Long) {
-        separator()
-        append('"').append(name).append("\":").append(value)
-    }
-
-    private fun StringBuilder.booleanField(name: String, value: Boolean) {
-        separator()
-        append('"').append(name).append("\":").append(value)
-    }
-
-    private fun escapeJson(value: String): String = buildString(value.length + 8) {
-        value.forEach { char ->
-            when (char) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\b' -> append("\\b")
-                '\u000C' -> append("\\f")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> if (char.code < 0x20) {
-                    append("\\u").append(char.code.toString(16).padStart(4, '0'))
-                } else append(char)
-            }
-        }
-    }
+    private fun StringBuilder.separator() { if (length > 1) append(',') }
+    private fun StringBuilder.stringField(name: String, value: String) { separator(); append('"').append(name).append("\":\"").append(escapeJson(value)).append('"') }
+    private fun StringBuilder.nullableField(name: String, value: String?) { separator(); append('"').append(name).append("\":"); if (value == null) append("null") else append('"').append(escapeJson(value)).append('"') }
+    private fun StringBuilder.numberField(name: String, value: Long) { separator(); append('"').append(name).append("\":").append(value) }
+    private fun StringBuilder.booleanField(name: String, value: Boolean) { separator(); append('"').append(name).append("\":").append(value) }
+    private fun escapeJson(value: String): String = buildString(value.length + 8) { value.forEach { char -> when (char) { '\\' -> append("\\\\"); '"' -> append("\\\""); '\b' -> append("\\b"); '\u000C' -> append("\\f"); '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t"); else -> if (char.code < 0x20) append("\\u").append(char.code.toString(16).padStart(4, '0')) else append(char) } } }
 }
