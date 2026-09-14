@@ -251,17 +251,27 @@ internal fun PhaseBPlayerScreen(
         }
 
         state.errorMessage?.let { message ->
-            Surface(Modifier.align(Alignment.Center).padding(28.dp), shape = RoundedCornerShape(24.dp), color = Color.Black.copy(alpha = .90f)) {
+            val errorParts = remember(message) {
+                val pieces = message.split(":", limit = 2)
+                presentPlaybackError(pieces.firstOrNull().orEmpty(), pieces.getOrNull(1))
+            }
+            Surface(Modifier.align(Alignment.Center).padding(22.dp), shape = RoundedCornerShape(24.dp), color = Color.Black.copy(alpha = .93f)) {
                 Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp))
+                    Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(34.dp))
                     Spacer(Modifier.height(10.dp))
-                    Text("Playback stopped", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(6.dp))
-                    Text(message, color = Color.White.copy(alpha = .72f), fontSize = 11.sp, maxLines = 3)
-                    Spacer(Modifier.height(14.dp))
+                    Text(errorParts.title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(7.dp))
+                    Text(errorParts.explanation, color = Color.White.copy(alpha = .76f), fontSize = 11.sp, maxLines = 4)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Technical: $message", color = Color.White.copy(alpha = .38f), fontSize = 9.sp, maxLines = 2)
+                    Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = back) { Text("Back") }
-                        Button(onClick = { controller.retry(); chromeVisible = true }) { Text("Retry") }
+                        OutlinedButton(onClick = back) { Text("Back to library") }
+                        if (errorParts.kind == PlaybackErrorKind.MISSING_MEDIA) {
+                            Button(onClick = back) { Text("Remove from library") }
+                        } else {
+                            Button(onClick = { controller.retry(); chromeVisible = true }) { Text("Retry") }
+                        }
                     }
                 }
             }
