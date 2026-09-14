@@ -3,9 +3,8 @@ package com.innotrepid.videoplayer.intelligence
 import com.innotrepid.videoplayer.library.VideoItem
 
 /**
- * A deterministic playback session scoped to the selected video's folder.
- * Keeping the session separate from the live library means rescans cannot
- * silently reorder what the user is currently watching.
+ * A deterministic playback session scoped to the selected video's physical folder.
+ * The full relative path is used so folders such as Sn1 from different series never merge.
  */
 class VideoSessionQueue private constructor(
     private val items: List<VideoItem>,
@@ -15,6 +14,7 @@ class VideoSessionQueue private constructor(
     val next: VideoItem? get() = items.getOrNull(currentIndex + 1)
     val previous: VideoItem? get() = items.getOrNull(currentIndex - 1)
     val remaining: List<VideoItem> get() = items.drop(currentIndex + 1)
+    val isFirst: Boolean get() = currentIndex == 0
     val isLast: Boolean get() = currentIndex >= items.lastIndex
 
     fun moveTo(id: String): VideoSessionQueue? {
@@ -25,6 +25,15 @@ class VideoSessionQueue private constructor(
     fun advance(): VideoSessionQueue? =
         if (next != null) copy(currentIndex = currentIndex + 1) else null
 
+    fun retreat(): VideoSessionQueue? =
+        if (previous != null) copy(currentIndex = currentIndex - 1) else null
+
+    fun advanceIfCurrent(currentId: String): VideoSessionQueue? =
+        if (current?.id == currentId) advance() else null
+
+    fun retreatIfCurrent(currentId: String): VideoSessionQueue? =
+        if (current?.id == currentId) retreat() else null
+
     private fun copy(currentIndex: Int) = VideoSessionQueue(items, currentIndex)
 
     companion object {
@@ -32,8 +41,8 @@ class VideoSessionQueue private constructor(
             if (videos.isEmpty()) return null
 
             val selected = videos.firstOrNull { it.id == selectedId } ?: return null
-            val selectedFolder = selected.folderName
-            val sessionItems = videos.filter { it.folderName == selectedFolder }
+            val selectedFolder = selected.folderKey
+            val sessionItems = videos.filter { it.folderKey == selectedFolder }
             val ordered = sessionItems.sortedWith(videoQueueComparator())
             val index = ordered.indexOfFirst { it.id == selectedId }
 

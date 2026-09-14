@@ -3,6 +3,7 @@ package com.innotrepid.videoplayer.library
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -31,9 +32,17 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
             val title = queryDisplayName(resolver, uri)
                 ?: uri.lastPathSegment?.substringAfterLast('/')
                 ?: "Untitled video"
-            val id = uri.toString().hashCode().toString(16)
-            val existing = library.find(id)
-            library.upsert((existing ?: VideoItem(id = id, uri = uri, title = title)).copy(uri = uri, title = title))
+            val existingIds = library.idsForUri(uri)
+            val existing = existingIds.firstNotNullOfOrNull(library::find)
+            val id = existing?.id ?: uri.toString().hashCode().toString(16)
+            val importedFolder = existing?.relativePath ?: queryDocumentFolder(resolver, uri)
+            val item = (existing ?: VideoItem(id = id, uri = uri, title = title)).copy(
+                uri = uri,
+                title = title,
+                relativePath = importedFolder
+            )
+            library.upsert(item)
+            existingIds.filter { it != id }.forEach(library::remove)
             _videos.value = library.all()
         }
     }
@@ -45,11 +54,14 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    /**
+     * Playback progress is a durability checkpoint. It is intentionally persisted
+     * synchronously so an Activity/process shutdown cannot cancel the write before
+     * the latest known position reaches disk.
+     */
     fun updateProgress(id: String, positionMs: Long, durationMs: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            library.updateProgress(id, positionMs, durationMs)
-            _videos.value = library.all()
-        }
+        library.updateProgress(id, positionMs, durationMs)
+        _videos.value = library.all()
     }
 
     fun markCompleted(id: String) {
@@ -70,5 +82,22 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
         }
+    }.getOrNull()
+
+    /**
+     * SAF document providers sometimes expose the source folder in their document ID
+     * (for example `primary:Series/Season 1/Episode 1.mp4`). Preserve that folder for
+     * manually imported videos so session queues do not merge unrelated imports that
+     * otherwise have no MediaStore relativePath.
+     */
+    private fun queryDocumentFolder(resolver: ContentResolver, uri: Uri): String? = runCatching {
+        if (!DocumentsContract.isDocumentUri(getApplication(), uri)) return@runCatching null
+        val documentId = DocumentsContract.getDocumentId(uri)
+        val path = documentId.substringAfter(':', documentId)
+            .replace('\\', '/')
+            .trim('/')
+        path.substringBeforeLast('/', missingDelimiterValue = "")
+            .trim('/')
+            .takeIf { it.isNotBlank() }
     }.getOrNull()
 }

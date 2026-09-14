@@ -9,6 +9,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Local append-only behavioral log for Momentum signals.
@@ -22,23 +24,26 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
     private val file = File(filesDir, "momentum_events.jsonl")
     private val legacyFile = File(filesDir, "momentum_events.json")
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val closed = AtomicBoolean(false)
 
     companion object {
         private const val SCHEMA_VERSION = 1
         private const val MAX_BYTES = 2L * 1024L * 1024L
         private const val TRIM_TO_LINES = 1_000
+        private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
     }
 
-    init {
-        migrateLegacyLog()
-    }
+    init { migrateLegacyLog() }
 
     override fun emit(event: MomentumEvent) {
-        executor.execute {
-            runCatching {
-                ensureParent()
-                file.appendText(event.toJson().toString() + "\n")
-                trimIfNeeded()
+        if (closed.get()) return
+        runCatching {
+            executor.execute {
+                runCatching {
+                    ensureParent()
+                    file.appendText(event.toJson().toString() + "\n")
+                    trimIfNeeded()
+                }
             }
         }
     }
@@ -49,6 +54,10 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
             runCatching { JSONObject(line) }.getOrNull()
         }
     }.getOrDefault(emptyList())
+
+    /** Returns recent records as typed events for the local intelligence pipeline. */
+    fun recentEvents(limit: Int = 200): List<MomentumEvent> =
+        recent(limit).mapNotNull(MomentumEventJsonCodec::decode)
 
     fun clear() {
         runCatching {
@@ -75,23 +84,28 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
         text.ifBlank { "# Video Player diagnostics\n" }
     }.getOrDefault("# Video Player diagnostics\n")
 
+    /**
+     * Stops accepting new events, lets already queued writes finish, then closes
+     * the executor. Repeated calls are safe.
+     */
     fun shutdown() {
-        executor.shutdown()
+        if (!closed.compareAndSet(false, true)) return
+        runCatching {
+            executor.shutdown()
+            executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        }
     }
 
     private fun flush() {
-        executor.submit { }.get()
+        if (executor.isShutdown) return
+        runCatching { executor.submit { }.get() }
     }
 
-    private fun ensureParent() {
-        file.parentFile?.mkdirs()
-    }
+    private fun ensureParent() { file.parentFile?.mkdirs() }
 
     private fun readLines(): List<String> = if (file.exists()) {
         file.readLines().filter { it.isNotBlank() }
-    } else {
-        emptyList()
-    }
+    } else emptyList()
 
     private fun trimIfNeeded() {
         if (file.length() <= MAX_BYTES) return
@@ -106,9 +120,7 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
             ensureParent()
             file.printWriter().use { writer ->
                 for (index in 0 until array.length()) {
-                    writer.println(
-                        array.getJSONObject(index).put("schemaVersion", SCHEMA_VERSION).toString()
-                    )
+                    writer.println(array.getJSONObject(index).put("schemaVersion", SCHEMA_VERSION).toString())
                 }
             }
             legacyFile.delete()
@@ -120,42 +132,28 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
         put("schemaVersion", SCHEMA_VERSION)
         when (this@toJson) {
             is MomentumEvent.VideoStarted -> {
-                put("type", "video_started")
-                put("mediaId", mediaId)
-                put("positionMs", positionMs)
+                put("type", "video_started"); put("mediaId", mediaId); put("positionMs", positionMs)
             }
             is MomentumEvent.VideoResumed -> {
-                put("type", "video_resumed")
-                put("mediaId", mediaId)
-                put("positionMs", positionMs)
+                put("type", "video_resumed"); put("mediaId", mediaId); put("positionMs", positionMs)
             }
             is MomentumEvent.VideoPaused -> {
-                put("type", "video_paused")
-                put("mediaId", mediaId)
-                put("positionMs", positionMs)
+                put("type", "video_paused"); put("mediaId", mediaId); put("positionMs", positionMs)
             }
             is MomentumEvent.VideoSeeked -> {
-                put("type", "video_seeked")
-                put("mediaId", mediaId)
-                put("fromPositionMs", fromPositionMs)
-                put("toPositionMs", toPositionMs)
+                put("type", "video_seeked"); put("mediaId", mediaId)
+                put("fromPositionMs", fromPositionMs); put("toPositionMs", toPositionMs)
             }
             is MomentumEvent.VideoCompleted -> {
-                put("type", "video_completed")
-                put("mediaId", mediaId)
-                put("durationMs", durationMs)
+                put("type", "video_completed"); put("mediaId", mediaId); put("durationMs", durationMs)
             }
             is MomentumEvent.VideoSkipped -> {
-                put("type", "video_skipped")
-                put("mediaId", mediaId)
-                put("positionMs", positionMs)
-                put("durationMs", durationMs)
+                put("type", "video_skipped"); put("mediaId", mediaId)
+                put("positionMs", positionMs); put("durationMs", durationMs)
             }
             is MomentumEvent.VideoError -> {
-                put("type", "video_error")
-                put("mediaId", mediaId)
-                put("positionMs", positionMs)
-                put("message", message)
+                put("type", "video_error"); put("mediaId", mediaId)
+                put("positionMs", positionMs); put("message", message)
             }
         }
         put("timestampMs", timestampMs)

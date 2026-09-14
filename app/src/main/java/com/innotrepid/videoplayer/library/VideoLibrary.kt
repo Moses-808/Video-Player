@@ -3,12 +3,12 @@ package com.innotrepid.videoplayer.library
 import android.content.Context
 import android.net.Uri
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 
 /** Small JSON-backed local metadata store. Original video bytes never live here. */
-class VideoLibrary(context: Context) {
-    private val file = File(context.filesDir, "video_library.json")
+class VideoLibrary(private val file: File) {
+    constructor(context: Context) : this(File(context.filesDir, "video_library.json"))
+
     private val items = LinkedHashMap<String, VideoItem>()
 
     init { load() }
@@ -21,11 +21,31 @@ class VideoLibrary(context: Context) {
 
     @Synchronized fun find(id: String): VideoItem? = items[id]
 
+    /** Returns all stored records pointing at the same underlying media URI. */
+    @Synchronized
+    fun idsForUri(uri: Uri): List<String> = items.values
+        .filter { it.uri == uri }
+        .map { it.id }
+
     @Synchronized
     fun upsert(item: VideoItem) { items[item.id] = item; save() }
 
+    /** Apply a set of metadata changes with one disk write instead of one write per item. */
     @Synchronized
-    fun remove(id: String) { items.remove(id); save() }
+    fun upsertAll(values: Iterable<VideoItem>) {
+        values.forEach { items[it.id] = it }
+        save()
+    }
+
+    @Synchronized
+    fun remove(id: String) { if (items.remove(id) != null) save() }
+
+    @Synchronized
+    fun removeAll(ids: Iterable<String>) {
+        var changed = false
+        ids.forEach { changed = items.remove(it) != null || changed }
+        if (changed) save()
+    }
 
     @Synchronized
     fun toggleFavorite(id: String) {
@@ -79,27 +99,35 @@ class VideoLibrary(context: Context) {
 
     private fun save() {
         file.parentFile?.mkdirs()
-        val array = JSONArray()
-        items.values.forEach { item ->
-            array.put(JSONObject().apply {
-                put("id", item.id)
-                put("uri", item.uri.toString())
-                put("title", item.title)
-                put("durationMs", item.durationMs)
-                put("sizeBytes", item.sizeBytes)
-                put("dateModifiedMs", item.dateModifiedMs)
-                put("relativePath", item.relativePath)
-                put("mimeType", item.mimeType)
-                put("lastPositionMs", item.lastPositionMs)
-                put("lastPlayedAtMs", item.lastPlayedAtMs)
-                put("addedAtMs", item.addedAtMs)
-                put("isFavorite", item.isFavorite)
-            })
-        }
-
-        // Keep persistence deterministic across Android and the local JVM test environment.
-        // A direct write is preferable here to java.nio atomic-move APIs, whose filesystem
-        // semantics vary across the environments in which this small metadata store runs.
-        file.writeText(array.toString())
+        file.writeText(buildJson())
     }
+
+    private fun buildJson(): String = buildString {
+        append('[')
+        items.values.forEachIndexed { index, item ->
+            if (index > 0) append(',')
+            append('{')
+            stringField("id", item.id)
+            stringField("uri", item.uri.toString())
+            stringField("title", item.title)
+            numberField("durationMs", item.durationMs)
+            numberField("sizeBytes", item.sizeBytes)
+            numberField("dateModifiedMs", item.dateModifiedMs)
+            nullableField("relativePath", item.relativePath)
+            nullableField("mimeType", item.mimeType)
+            numberField("lastPositionMs", item.lastPositionMs)
+            numberField("lastPlayedAtMs", item.lastPlayedAtMs)
+            numberField("addedAtMs", item.addedAtMs)
+            booleanField("isFavorite", item.isFavorite)
+            append('}')
+        }
+        append(']')
+    }
+
+    private fun StringBuilder.separator() { if (length > 1) append(',') }
+    private fun StringBuilder.stringField(name: String, value: String) { separator(); append('"').append(name).append("\":\"").append(escapeJson(value)).append('"') }
+    private fun StringBuilder.nullableField(name: String, value: String?) { separator(); append('"').append(name).append("\":"); if (value == null) append("null") else append('"').append(escapeJson(value)).append('"') }
+    private fun StringBuilder.numberField(name: String, value: Long) { separator(); append('"').append(name).append("\":").append(value) }
+    private fun StringBuilder.booleanField(name: String, value: Boolean) { separator(); append('"').append(name).append("\":").append(value) }
+    private fun escapeJson(value: String): String = buildString(value.length + 8) { value.forEach { char -> when (char) { '\\' -> append("\\\\"); '"' -> append("\\\""); '\b' -> append("\\b"); '\u000C' -> append("\\f"); '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t"); else -> if (char.code < 0x20) append("\\u").append(char.code.toString(16).padStart(4, '0')) else append(char) } } }
 }
