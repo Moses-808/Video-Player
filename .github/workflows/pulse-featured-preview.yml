@@ -1,0 +1,49 @@
+name: Pulse featured preview repair
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Pulse featured preview changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          pulse = Path('app/src/main/java/com/innotrepid/videoplayer/VisonatePulse.kt')
+          text = pulse.read_text()
+          old = '''    val heroPrediction = ranked.firstOrNull()?.takeIf { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) >= .45f }\n    val heroVideo = heroPrediction?.second\n    val heroConfidence = heroPrediction?.let { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) } ?: 0f\n'''
+          new = '''    val learnedHero = ranked.firstOrNull()?.takeIf { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) >= .45f }\n    val defaultHeroVideo = videos\n        .filter { it.durationMs >= 5 * 60 * 1000L }\n        .maxByOrNull { it.durationMs }\n    val heroPrediction = learnedHero ?: defaultHeroVideo?.let { video ->\n        VideoPrediction(\n            mediaId = video.id,\n            score = 0f,\n            confidence = 0f,\n            reasons = emptyList(),\n            previewPositionMs = null\n        )\n    }?.let { prediction -> prediction to (byId[prediction.mediaId] ?: defaultHeroVideo) }\n    val heroVideo = heroPrediction?.second\n    val isDefaultHero = learnedHero == null && heroVideo != null\n    val heroConfidence = heroPrediction?.let { feedback.adjustedConfidence(it.first.mediaId, it.first.confidence) } ?: 0f\n'''
+          if old not in text: raise SystemExit('Pulse hero block not found')
+          text = text.replace(old, new, 1)
+          text = text.replace('VisonatePredictionHero(heroPrediction, heroVideo, heroConfidence, open, feedback)', 'VisonatePredictionHero(heroPrediction, heroVideo, heroConfidence, open, feedback, isDefaultHero)', 1)
+          text = text.replace('''@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore) {''', '''@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore, isDefaultHero: Boolean) {''', 1)
+          text = text.replace('LaunchedEffect(model.mediaId) { feedback.recordShown(model.mediaId) }', 'LaunchedEffect(model.mediaId, isDefaultHero) { if (!isDefaultHero) feedback.recordShown(model.mediaId) }', 1)
+          text = text.replace('Text("THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary,', 'Text(if (isDefaultHero) "FEATURED PREVIEW" else "THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary,', 1)
+          text = text.replace('Text("I think this is next.",', 'Text(if (isDefaultHero) "Start with this.[0m" else "I think this is next.",', 1)
+          text = text.replace('Text("Not a list. A signal.",', 'Text(if (isDefaultHero) "A long-form preview chosen for Pulse." else "Not a list. A signal.",', 1)
+          text = text.replace('Text("CONFIDENCE", fontSize = 7.sp,', 'Text(if (isDefaultHero) "PULSE FEATURE" else "CONFIDENCE", fontSize = 7.sp,', 1)
+          text = text.replace('Text("${(confidence * 100).toInt()}%", fontSize = 13.sp,', 'Text(if (isDefaultHero) "PINNED" else "${(confidence * 100).toInt()}%", fontSize = 13.sp,', 1)
+          text = text.replace('feedback.recordAccepted(model.mediaId); open(video)', 'if (!isDefaultHero) feedback.recordAccepted(model.mediaId); open(video)')
+          pulse.write_text(text)
+
+          preview = Path('app/src/main/java/com/innotrepid/videoplayer/VideoPredictionPreview.kt')
+          p = preview.read_text()
+          if 'previewStartMs + 8_000L' not in p: raise SystemExit('Preview duration block not found')
+          p = p.replace('previewStartMs + 8_000L', 'previewStartMs + 15_000L', 1)
+          preview.write_text(p)
+          PY
+
+          rm .github/workflows/pulse-featured-preview.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/innotrepid/videoplayer/VisonatePulse.kt app/src/main/java/com/innotrepid/videoplayer/VideoPredictionPreview.kt .github/workflows/pulse-featured-preview.yml
+          git diff --cached --check
+          git commit -m 'Make Pulse feature a pinned long-video preview'
+          git push
