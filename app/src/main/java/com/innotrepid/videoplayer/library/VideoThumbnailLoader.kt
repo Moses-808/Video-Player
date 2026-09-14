@@ -10,17 +10,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.media.MediaMetadataRetriever
 
+/** Loads small representative frames without keeping video bytes in the app. */
 object VideoThumbnailLoader {
-    suspend fun load(context: Context, uri: Uri, width: Int, height: Int): Bitmap? =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    context.contentResolver.loadThumbnail(uri, Size(width, height), null)
-                } else {
-                    loadLegacy(context, uri)
-                }
-            }.getOrNull()
-        }
+    private const val MAX_CACHE_ENTRIES = 24
+    private val cache = object : LinkedHashMap<String, Bitmap>(MAX_CACHE_ENTRIES, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean = size > MAX_CACHE_ENTRIES
+    }
+
+    suspend fun load(context: Context, uri: Uri, width: Int, height: Int): Bitmap? = withContext(Dispatchers.IO) {
+        val key = "$uri|$width|$height"
+        synchronized(cache) { cache[key] }?.let { return@withContext it }
+        val bitmap = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                context.contentResolver.loadThumbnail(uri, Size(width, height), null)
+            } else {
+                loadLegacy(context, uri)
+            }
+        }.getOrNull()
+        if (bitmap != null) synchronized(cache) { cache[key] = bitmap }
+        bitmap
+    }
+
+    fun clearCache() {
+        synchronized(cache) { cache.clear() }
+    }
 
     @WorkerThread
     private fun loadLegacy(context: Context, uri: Uri): Bitmap? {
