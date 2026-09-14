@@ -18,40 +18,25 @@ Visonate starts with reliable local playback and grows into an anticipatory view
 - Manual video import through the Android document picker
 - Duplicate-aware library reconciliation and missing-media cleanup
 - Favorites / Saved videos, search, sorting, collections and Continue Watching
-- Video thumbnails and resilient browsing previews
-- Pulse home experience with contextual predictive previews
-- Momentum prediction, explainable confidence and behavioral feedback learning
-- Guarded predictive automatic next-video selection with deterministic fallback
-- Local bounded JSON Lines behavioral diagnostics and explicit export
-- Settings for intelligence, learning, auto-advance, appearance, library and diagnostics
-- Horizontal screen navigation with animated transitions
+- Pulse with a pinned featured long-video preview and Momentum-powered predictions
+- Lifecycle-aware muted previews with contextual preview moments and fallback thumbnails
+- Local Momentum event recording, behavior interpretation, prediction feedback and diagnostic export
+- Swipe navigation between Pulse, Library and Saved
 
-The app never copies original video bytes into its private library. The library stores references and metadata, so a 10 GB movie does not become a 10 GB app.
+## Architecture
 
-## Momentum
+Playback is isolated behind `PlaybackController` and exposes a `PlaybackUiState` flow to the player UI. Viewing telemetry crosses into intelligence through `VideoBehaviorAnalyzer`, keeping playback and prediction concerns separate.
 
-Momentum is Visonate's anticipatory intelligence layer:
+The product relationship is:
 
-**Observe → Understand → Predict → Present → Learn → Decide**
-
-Prediction and learned preferences are local. The player remains in control: Momentum only overrides deterministic continuation when its evidence is strong enough and the candidate belongs to the current playback session.
-
-## Diagnostics
-
-Playback events are stored locally in the app's private storage as a bounded JSON Lines log. The recorder captures starts, resumes, pauses, seeks, completions, skips and playback errors without storing the original video bytes.
-
-Use **Settings → Diagnostics → Export** to create a local diagnostics file. Nothing is exported automatically.
-
-## Privacy
-
-Visonate is designed around local media and local intelligence. Video files are not copied into the app's library. Library metadata, playback history, behavioral events and learned prediction preferences remain on the device unless you explicitly export diagnostics.
-
-## License
-
-Visonate is proprietary software. © 2026 Innotrepid. All rights reserved. See `LICENSE` for the full terms.
+- **Resonate** — music, feeling and sequence behavior
+- **Visonate** — visual media, continuity, attention and viewing intent
+- **Momentum** — the shared anticipatory intelligence layer
 
 ## Status
 
-**Visonate 0.4.1 — Momentum-enabled local video player**
+Visonate 0.4.1 — Momentum-enabled local video player. The `main` branch is the canonical source of truth.
 
-The foundation is intentionally stable. Future development will focus on deeper anticipation and product refinement rather than replacing the playback core.
+## License
+
+Copyright (c) 2026 Innotrepid. All rights reserved.
