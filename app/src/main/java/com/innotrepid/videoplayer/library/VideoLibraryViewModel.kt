@@ -54,14 +54,12 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    /**
-     * Playback progress is a durability checkpoint. It is intentionally persisted
-     * synchronously so an Activity/process shutdown cannot cancel the write before
-     * the latest known position reaches disk.
-     */
+    /** Persist playback checkpoints away from the UI thread. */
     fun updateProgress(id: String, positionMs: Long, durationMs: Long) {
-        library.updateProgress(id, positionMs, durationMs)
-        _videos.value = library.all()
+        viewModelScope.launch(Dispatchers.IO) {
+            library.updateProgress(id, positionMs, durationMs)
+            _videos.value = library.all()
+        }
     }
 
     fun markCompleted(id: String) {
@@ -84,12 +82,6 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         }
     }.getOrNull()
 
-    /**
-     * SAF document providers sometimes expose the source folder in their document ID
-     * (for example `primary:Series/Season 1/Episode 1.mp4`). Preserve that folder for
-     * manually imported videos so session queues do not merge unrelated imports that
-     * otherwise have no MediaStore relativePath.
-     */
     private fun queryDocumentFolder(resolver: ContentResolver, uri: Uri): String? = runCatching {
         if (!DocumentsContract.isDocumentUri(getApplication(), uri)) return@runCatching null
         val documentId = DocumentsContract.getDocumentId(uri)
