@@ -20,6 +20,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -38,6 +41,7 @@ internal fun VideoPredictionPreview(
     previewPositionMs: Long? = null
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val previewStartMs = remember(video.id, video.uri, previewPositionMs, video.durationMs, video.lastPositionMs) {
         previewPositionMs ?: VideoPreviewMoment.startPositionMs(
             durationMs = video.durationMs,
@@ -70,8 +74,31 @@ internal fun VideoPredictionPreview(
         }
     }
 
+    DisposableEffect(lifecycleOwner, previewPlayer, previewFailed) {
+        if (previewFailed) return@DisposableEffect onDispose { }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    if (previewPlayer.playbackState == Player.STATE_ENDED) {
+                        previewPlayer.seekTo(previewStartMs)
+                    }
+                    previewPlayer.playWhenReady = true
+                    previewPlayer.play()
+                }
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP -> previewPlayer.pause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(previewPlayer, previewFailed, previewStartMs, video.durationMs) {
         if (previewFailed) return@LaunchedEffect
+        previewPlayer.seekTo(previewStartMs)
+        previewPlayer.playWhenReady = true
+        previewPlayer.play()
         val previewEndMs = if (video.durationMs > previewStartMs) {
             (previewStartMs + 8_000L).coerceAtMost(video.durationMs)
         } else {
