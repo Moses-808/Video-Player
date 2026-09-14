@@ -28,6 +28,7 @@ class PlaybackController(
         data class Seeked(val fromPositionMs: Long, val toPositionMs: Long) : Event
         data class Completed(val positionMs: Long, val durationMs: Long) : Event
         data class Error(val positionMs: Long, val message: String) : Event
+        data class Released(val mediaUri: Uri, val positionMs: Long, val durationMs: Long) : Event
     }
 
     private val mutableState = MutableStateFlow(PlaybackUiState())
@@ -41,6 +42,7 @@ class PlaybackController(
     private var released = false
     private var switchingMedia = false
     private var canRetry = false
+    private var activeMediaUri: Uri? = null
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -122,6 +124,9 @@ class PlaybackController(
         completed = false
         canRetry = false
         mutableState.value = PlaybackUiState()
+        activeMediaUri = uri
+        player.stop()
+        player.clearMediaItems()
         player.setMediaItem(
             androidx.media3.common.MediaItem.fromUri(uri),
             startPositionMs.coerceAtLeast(0L)
@@ -201,6 +206,7 @@ class PlaybackController(
         canRetry = false
         player.stop()
         player.clearMediaItems()
+        activeMediaUri = null
         switchingMedia = false
         mutableState.value = PlaybackUiState()
     }
@@ -213,7 +219,14 @@ class PlaybackController(
 
     fun release() {
         if (released) return
+        val mediaUri = activeMediaUri ?: player.currentMediaItem?.localConfiguration?.uri
+        if (mediaUri != null) {
+            val duration = player.duration.coerceAtLeast(0L)
+            val position = player.currentPosition.coerceAtLeast(0L).coerceAtMost(duration)
+            eventFlow.tryEmit(Event.Released(mediaUri, position, duration))
+        }
         released = true
+        activeMediaUri = null
         player.removeListener(listener)
         player.release()
     }
@@ -223,7 +236,10 @@ class PlaybackController(
     }
 
     private fun hasActiveMediaCallback(): Boolean =
-        !released && !switchingMedia && player.currentMediaItem != null
+        !released &&
+            !switchingMedia &&
+            player.currentMediaItem != null &&
+            player.currentMediaItem?.localConfiguration?.uri == activeMediaUri
 
     private fun publish() {
         if (released) return

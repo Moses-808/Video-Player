@@ -29,6 +29,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.exoplayer.ExoPlayer
 import com.innotrepid.videoplayer.intelligence.MomentumEvent
@@ -57,6 +60,7 @@ private val PhaseBPink = Color(0xFFEC4899)
 @Composable
 fun VideoPlayerRootSafe() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val vm: VideoLibraryViewModel = viewModel()
     val videos by vm.videos.collectAsState()
     val recorder = remember { MomentumEventRecorder(context.applicationContext) }
@@ -83,6 +87,8 @@ fun VideoPlayerRootSafe() {
     val latestQueue by rememberUpdatedState(queue)
     val latestVideos by rememberUpdatedState(videos)
     val persist: (VideoItem) -> Unit = { video -> val duration = controller.durationMs(); if (duration > 0L) vm.updateProgress(video.id, controller.currentPositionMs(), duration) }
+    val persistCheckpoint: () -> Unit = { latestSelected?.let(persist) }
+    val currentPersistCheckpoint by rememberUpdatedState(persistCheckpoint)
     val openVideo: (VideoItem) -> Unit = remember(videos) { { video -> queue = VideoSessionQueue.create(videos, video.id); selectedId = video.id } }
     val openSession: (VideoItem) -> Unit = remember(controller) { { video -> if (video.id != latestSelected?.id) { latestSelected?.let(persist); queue = queue?.moveTo(video.id) ?: VideoSessionQueue.create(latestVideos, video.id); selectedId = video.id } } }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result -> permission = result.values.any { it }; if (permission) vm.scanDevice() }
@@ -104,10 +110,37 @@ fun VideoPlayerRootSafe() {
             predictions = VideoPredictionEngine.predict(videos, events, currentMediaId = currentId)
         }
     }
-    DisposableEffect(player) { onDispose { controller.release(); recorder.shutdown() } }
+    DisposableEffect(lifecycleOwner, controller) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) currentPersistCheckpoint()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    DisposableEffect(player) { onDispose { currentPersistCheckpoint(); controller.release(); recorder.shutdown() } }
     LaunchedEffect(selectedId) { val video = selected ?: return@LaunchedEffect; controller.setMedia(video.uri, video.lastPositionMs.coerceAtLeast(0L), true) }
     LaunchedEffect(selectedId) { while (isActive && selectedId != null) { delay(8_000L); latestSelected?.let { video -> val duration = controller.durationMs(); if (duration > 0L) vm.updateProgress(video.id, controller.currentPositionMs(), duration) } } }
-    LaunchedEffect(controller) { controller.events.collect { event -> val video = latestSelected ?: return@collect; if (controller.currentMediaUri() != video.uri) return@collect; val now = System.currentTimeMillis(); when (event) { is PlaybackController.Event.Started -> recorder.emit(MomentumEvent.VideoStarted(video.id, event.positionMs, now)); is PlaybackController.Event.Resumed -> recorder.emit(MomentumEvent.VideoResumed(video.id, event.positionMs, now)); is PlaybackController.Event.Paused -> recorder.emit(MomentumEvent.VideoPaused(video.id, event.positionMs, now)); is PlaybackController.Event.Seeked -> recorder.emit(MomentumEvent.VideoSeeked(video.id, event.fromPositionMs, event.toPositionMs, now)); is PlaybackController.Event.Completed -> { recorder.emit(MomentumEvent.VideoCompleted(video.id, event.durationMs, now)); vm.markCompleted(video.id); if (autoAdvance) { val next = PlaybackTransitionCoordinator.next(latestQueue, video.id); if (next != null) { queue = next; selectedId = next.current?.id } else selectedId = null } else selectedId = null }; is PlaybackController.Event.Error -> recorder.emit(MomentumEvent.VideoError(video.id, event.positionMs, event.message, now)) } } }
+    LaunchedEffect(controller) {
+        controller.events.collect { event ->
+            val video = latestSelected ?: return@collect
+            val released = event is PlaybackController.Event.Released
+            if (!released && controller.currentMediaUri() != video.uri) return@collect
+            if (released && event.mediaUri != video.uri) return@collect
+            val now = System.currentTimeMillis()
+            when (event) {
+                is PlaybackController.Event.Started -> recorder.emit(MomentumEvent.VideoStarted(video.id, event.positionMs, now))
+                is PlaybackController.Event.Resumed -> recorder.emit(MomentumEvent.VideoResumed(video.id, event.positionMs, now))
+                is PlaybackController.Event.Paused -> { recorder.emit(MomentumEvent.VideoPaused(video.id, event.positionMs, now)); persist(video) }
+                is PlaybackController.Event.Seeked -> { recorder.emit(MomentumEvent.VideoSeeked(video.id, event.fromPositionMs, event.toPositionMs, now)); persist(video) }
+                is PlaybackController.Event.Completed -> {
+                    recorder.emit(MomentumEvent.VideoCompleted(video.id, event.durationMs, now)); persist(video); vm.markCompleted(video.id)
+                    if (autoAdvance) { val next = PlaybackTransitionCoordinator.next(latestQueue, video.id); if (next != null) { queue = next; selectedId = next.current?.id } else selectedId = null } else selectedId = null
+                }
+                is PlaybackController.Event.Error -> { recorder.emit(MomentumEvent.VideoError(video.id, event.positionMs, event.message, now)); persist(video) }
+                is PlaybackController.Event.Released -> vm.updateProgress(video.id, event.positionMs, event.durationMs)
+            }
+        }
+    }
     val scheme = if (lightMode) lightColorScheme(primary = Color(0xFF6D28D9), secondary = Color(0xFF0891B2), tertiary = Color(0xFFDB2777)) else darkColorScheme(primary = PhaseBViolet, secondary = PhaseBCyan, tertiary = PhaseBPink, background = Color(0xFF07070C), surface = Color(0xFF101018), surfaceVariant = Color(0xFF171724))
     MaterialTheme(colorScheme = scheme) {
         if (selected != null) PhaseBPlayerScreen(selected, player, controller, queue, { vm.toggleFavorite(selected.id) }, { persist(selected); controller.clearMedia(); selectedId = null }, openSession)
