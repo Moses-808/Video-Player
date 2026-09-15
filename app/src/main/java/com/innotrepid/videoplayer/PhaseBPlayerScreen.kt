@@ -6,24 +6,74 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.QueuePlayNext
+import androidx.compose.material.icons.outlined.Replay10
+import androidx.compose.material.icons.outlined.ScreenRotation
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.VolumeOff
+import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -44,7 +94,8 @@ internal fun PhaseBPlayerScreen(
     queue: VideoSessionQueue?,
     favorite: () -> Unit,
     back: () -> Unit,
-    open: (VideoItem) -> Unit
+    open: (VideoItem) -> Unit,
+    onRemove: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context.safePhaseBActivity()
@@ -62,8 +113,11 @@ internal fun PhaseBPlayerScreen(
     DisposableEffect(fullscreen, landscape) {
         activity?.let { host ->
             val bars = WindowCompat.getInsetsController(host.window, host.window.decorView)
-            if (fullscreen) bars.hide(WindowInsetsCompat.Type.systemBars()) else bars.show(WindowInsetsCompat.Type.systemBars())
-            host.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            if (fullscreen) bars.hide(WindowInsetsCompat.Type.systemBars())
+            else bars.show(WindowInsetsCompat.Type.systemBars())
+            host.requestedOrientation =
+                if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
         onDispose { }
     }
@@ -91,78 +145,404 @@ internal fun PhaseBPlayerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
-            factory = { PlayerView(context).apply {
-                this.player = player
-                useController = false
-                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-            } },
+            factory = {
+                PlayerView(context).apply {
+                    this.player = player
+                    useController = false
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+            },
             update = { it.player = player },
-            modifier = Modifier.fillMaxSize().clickable { chromeVisible = !chromeVisible }
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable { chromeVisible = !chromeVisible },
         )
 
-        AnimatedVisibility(chromeVisible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = chromeVisible && state.errorMessage == null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize(),
+        ) {
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxWidth().height(132.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .78f), Color.Transparent))).align(Alignment.TopCenter))
-                Box(Modifier.fillMaxWidth().height(150.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .88f)))).align(Alignment.BottomCenter))
-                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = back) { Icon(Icons.Outlined.ArrowBack, "Back", tint = Color.White) }
-                    Column(Modifier.weight(1f)) {
-                        Text(video.title, color = Color.White, maxLines = 1, style = MaterialTheme.typography.titleMedium)
-                        video.folderName?.let { Text(it, color = Color.White.copy(alpha = .58f), fontSize = 10.sp) }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(132.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Black.copy(alpha = .78f), Color.Transparent),
+                            ),
+                        )
+                        .align(Alignment.TopCenter),
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = .88f)),
+                            ),
+                        )
+                        .align(Alignment.BottomCenter),
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = back) {
+                        Icon(Icons.Outlined.ArrowBack, "Back", tint = Color.White)
                     }
-                    IconButton(onClick = favorite) { Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) MaterialTheme.colorScheme.error else Color.White) }
-                    IconButton(onClick = { fullscreen = !fullscreen }) { Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, "Fullscreen", tint = Color.White) }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            video.title,
+                            color = Color.White,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        video.folderName?.let {
+                            Text(it, color = Color.White.copy(alpha = .58f), fontSize = 10.sp)
+                        }
+                    }
+                    IconButton(onClick = favorite) {
+                        Icon(
+                            if (video.isFavorite) Icons.Outlined.Favorite
+                            else Icons.Outlined.FavoriteBorder,
+                            "Save",
+                            tint = if (video.isFavorite) MaterialTheme.colorScheme.error
+                            else Color.White,
+                        )
+                    }
+                    IconButton(onClick = { fullscreen = !fullscreen }) {
+                        Icon(
+                            if (fullscreen) Icons.Outlined.FullscreenExit
+                            else Icons.Outlined.Fullscreen,
+                            "Fullscreen",
+                            tint = Color.White,
+                        )
+                    }
                 }
-                Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    IconButton(onClick = { previous?.let(open) }, enabled = previous != null) { Icon(Icons.Outlined.SkipPrevious, "Previous", tint = Color.White.copy(alpha = if (previous != null) 1f else .35f)) }
-                    FilledTonalIconButton(onClick = { controller.seekBy(-10_000L) }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Replay10, "Back 10 seconds") }
-                    FilledIconButton(onClick = controller::togglePlayPause, modifier = Modifier.size(68.dp)) { AnimatedContent(targetState = state.isPlaying, label = "playback control") { playing -> Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null) } }
-                    FilledTonalIconButton(onClick = { controller.seekBy(10_000L) }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Forward10, "Forward 10 seconds") }
-                    IconButton(onClick = { next?.let(open) }, enabled = next != null) { Icon(Icons.Outlined.SkipNext, "Next", tint = Color.White.copy(alpha = if (next != null) 1f else .35f)) }
+                Row(
+                    Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    IconButton(
+                        onClick = { previous?.let(open) },
+                        enabled = previous != null,
+                    ) {
+                        Icon(
+                            Icons.Outlined.SkipPrevious,
+                            "Previous",
+                            tint = Color.White.copy(alpha = if (previous != null) 1f else .35f),
+                        )
+                    }
+                    FilledTonalIconButton(
+                        onClick = { controller.seekBy(-10_000L) },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Outlined.Replay10, "Back 10 seconds")
+                    }
+                    FilledIconButton(
+                        onClick = controller::togglePlayPause,
+                        modifier = Modifier.size(68.dp),
+                    ) {
+                        AnimatedContent(
+                            targetState = state.isPlaying,
+                            label = "playback control",
+                        ) { playing ->
+                            Icon(
+                                if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                contentDescription = null,
+                            )
+                        }
+                    }
+                    FilledTonalIconButton(
+                        onClick = { controller.seekBy(10_000L) },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Outlined.Forward10, "Forward 10 seconds")
+                    }
+                    IconButton(
+                        onClick = { next?.let(open) },
+                        enabled = next != null,
+                    ) {
+                        Icon(
+                            Icons.Outlined.SkipNext,
+                            "Next",
+                            tint = Color.White.copy(alpha = if (next != null) 1f else .35f),
+                        )
+                    }
                 }
                 if (state.durationMs > 0L) {
-                    Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatPhaseBTime(if (scrub.isNaN()) state.positionMs else scrub.toLong()), color = Color.White.copy(alpha = .82f), fontSize = 10.sp)
-                            Text(formatPhaseBTime(state.durationMs), color = Color.White.copy(alpha = .82f), fontSize = 10.sp)
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                formatPhaseBTime(
+                                    if (scrub.isNaN()) state.positionMs else scrub.toLong(),
+                                ),
+                                color = Color.White.copy(alpha = .82f),
+                                fontSize = 10.sp,
+                            )
+                            Text(
+                                formatPhaseBTime(state.durationMs),
+                                color = Color.White.copy(alpha = .82f),
+                                fontSize = 10.sp,
+                            )
                         }
-                        Slider(value = if (scrub.isNaN()) state.positionMs.toFloat() else scrub.coerceIn(0f, state.durationMs.toFloat()), onValueChange = { scrub = it; chromeVisible = true }, onValueChangeFinished = { controller.seekTo(scrub.toLong()); scrub = Float.NaN }, modifier = Modifier.fillMaxWidth())
+                        Slider(
+                            value = if (scrub.isNaN()) {
+                                state.positionMs.toFloat()
+                            } else {
+                                scrub.coerceIn(0f, state.durationMs.toFloat())
+                            },
+                            onValueChange = {
+                                scrub = it
+                                chromeVisible = true
+                            },
+                            onValueChangeFinished = {
+                                controller.seekTo(scrub.toLong())
+                                scrub = Float.NaN
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
-                Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(bottom = if (state.durationMs > 0L) 74.dp else 18.dp), horizontalArrangement = Arrangement.End) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = if (state.durationMs > 0L) 74.dp else 18.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
                     Box {
-                        IconButton(onClick = { volumeMenu = !volumeMenu; speedMenu = false }) { Icon(if (state.isMuted) Icons.Outlined.VolumeOff else Icons.Outlined.VolumeUp, "Volume", tint = Color.White) }
-                        DropdownMenu(expanded = volumeMenu, onDismissRequest = { volumeMenu = false }) { Column(Modifier.width(220.dp).padding(14.dp)) { Text("Volume", style = MaterialTheme.typography.titleSmall); Spacer(Modifier.height(8.dp)); Slider(value = state.volume, onValueChange = controller::setVolume, modifier = Modifier.fillMaxWidth()); Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("Mute", style = MaterialTheme.typography.labelSmall); Switch(checked = state.isMuted, onCheckedChange = { controller.setVolume(if (it) 0f else 1f) }) } } }
+                        IconButton(onClick = {
+                            volumeMenu = !volumeMenu
+                            speedMenu = false
+                        }) {
+                            Icon(
+                                if (state.isMuted) Icons.Outlined.VolumeOff
+                                else Icons.Outlined.VolumeUp,
+                                "Volume",
+                                tint = Color.White,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = volumeMenu,
+                            onDismissRequest = { volumeMenu = false },
+                        ) {
+                            Column(Modifier.width(220.dp).padding(14.dp)) {
+                                Text("Volume", style = MaterialTheme.typography.titleSmall)
+                                Spacer(Modifier.height(8.dp))
+                                Slider(
+                                    value = state.volume,
+                                    onValueChange = controller::setVolume,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text("Mute", style = MaterialTheme.typography.labelSmall)
+                                    Switch(
+                                        checked = state.isMuted,
+                                        onCheckedChange = {
+                                            controller.setVolume(if (it) 0f else 1f)
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                     Box {
-                        IconButton(onClick = { speedMenu = !speedMenu; volumeMenu = false }) { Icon(Icons.Outlined.Speed, "Speed", tint = Color.White) }
-                        DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) { listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f).forEach { speed -> DropdownMenuItem(text = { Text("${speed}x") }, onClick = { controller.setSpeed(speed); speedMenu = false }) } }
+                        IconButton(onClick = {
+                            speedMenu = !speedMenu
+                            volumeMenu = false
+                        }) {
+                            Icon(Icons.Outlined.Speed, "Speed", tint = Color.White)
+                        }
+                        DropdownMenu(
+                            expanded = speedMenu,
+                            onDismissRequest = { speedMenu = false },
+                        ) {
+                            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                                DropdownMenuItem(
+                                    text = { Text("${speed}x") },
+                                    onClick = {
+                                        controller.setSpeed(speed)
+                                        speedMenu = false
+                                    },
+                                )
+                            }
+                        }
                     }
-                    IconButton(onClick = { landscape = !landscape }) { Icon(Icons.Outlined.ScreenRotation, "Rotate", tint = Color.White) }
+                    IconButton(onClick = { landscape = !landscape }) {
+                        Icon(Icons.Outlined.ScreenRotation, "Rotate", tint = Color.White)
+                    }
                 }
                 if (next != null) {
-                    Surface(Modifier.align(Alignment.BottomStart).padding(start = 14.dp, bottom = if (state.durationMs > 0L) 82.dp else 20.dp).clip(RoundedCornerShape(18.dp)).clickable { upNextExpanded = !upNextExpanded }) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp).widthIn(max = 300.dp)) {
+                    Surface(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(
+                                start = 14.dp,
+                                bottom = if (state.durationMs > 0L) 82.dp else 20.dp,
+                            )
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { upNextExpanded = !upNextExpanded },
+                    ) {
+                        Column(
+                            Modifier
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .widthIn(max = 300.dp),
+                        ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.QueuePlayNext, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("UP NEXT", style = MaterialTheme.typography.labelSmall)
+                                Icon(
+                                    Icons.Outlined.QueuePlayNext,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("UP NEXT", style = MaterialTheme.typography.labelSmall)
                             }
-                            AnimatedVisibility(upNextExpanded, enter = expandVertically(), exit = shrinkVertically()) { Column { Spacer(Modifier.height(7.dp)); Text(next.title, color = Color.White, style = MaterialTheme.typography.labelMedium) } }
+                            AnimatedVisibility(
+                                visible = upNextExpanded,
+                                enter = expandVertically(),
+                                exit = shrinkVertically(),
+                            ) {
+                                Column {
+                                    Spacer(Modifier.height(7.dp))
+                                    Text(
+                                        next.title,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        if (state.isBuffering && state.errorMessage == null) { Surface(Modifier.align(Alignment.Center), shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = .58f)) { CircularProgressIndicator(Modifier.padding(18.dp), color = MaterialTheme.colorScheme.primary) } }
+
+        if (state.isBuffering && state.errorMessage == null) {
+            Surface(
+                Modifier.align(Alignment.Center),
+                shape = RoundedCornerShape(50),
+                color = Color.Black.copy(alpha = .58f),
+            ) {
+                CircularProgressIndicator(
+                    Modifier.padding(18.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
         state.errorMessage?.let { message ->
-            val errorParts = remember(message) { val pieces = message.split(":", limit = 2); presentPlaybackError(pieces.firstOrNull().orEmpty(), pieces.getOrNull(1)) }
-            val retryable = errorParts.kind == PlaybackErrorKind.NETWORK || errorParts.kind == PlaybackErrorKind.SOURCE || errorParts.kind == PlaybackErrorKind.UNKNOWN
-            Surface(Modifier.align(Alignment.Center).padding(22.dp), shape = RoundedCornerShape(24.dp), color = Color.Black.copy(alpha = .93f)) {
-                Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(34.dp)); Spacer(Modifier.height(10.dp)); Text(errorParts.title, color = Color.White, style = MaterialTheme.typography.titleSmall); Text(errorParts.explanation, color = Color.White.copy(alpha = .72f), style = MaterialTheme.typography.bodySmall); Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = back) { Text("Back to library") }
-                        if (retryable) Button(onClick = { controller.retry(); chromeVisible = true }) { Text("Retry") }
+            val presentation = remember(message) {
+                val pieces = message.split(":", limit = 2)
+                presentPlaybackError(
+                    errorCodeName = pieces.firstOrNull().orEmpty(),
+                    message = pieces.getOrNull(1),
+                )
+            }
+
+            PlaybackErrorOverlay(
+                presentation = presentation,
+                onPrimary = {
+                    when (presentation.primaryAction) {
+                        PlaybackErrorAction.RETRY -> {
+                            controller.retry()
+                            chromeVisible = true
+                        }
+                        PlaybackErrorAction.REMOVE_FROM_LIBRARY -> onRemove()
+                        PlaybackErrorAction.BACK_TO_LIBRARY -> back()
+                    }
+                },
+                onBack = back,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaybackErrorOverlay(
+    presentation: PlaybackErrorPresentation,
+    onPrimary: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Surface(
+        Modifier
+            .fillMaxSize()
+            .padding(22.dp),
+        color = Color.Transparent,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color.Black.copy(alpha = .93f),
+            ) {
+                Column(
+                    Modifier
+                        .padding(22.dp)
+                        .widthIn(max = 340.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        Icons.Outlined.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(34.dp),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        presentation.title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        presentation.explanation,
+                        color = Color.White.copy(alpha = .72f),
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(18.dp))
+
+                    // Primary action
+                    Button(
+                        onClick = onPrimary,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(presentation.primaryLabel)
+                    }
+
+                    // Secondary "Back to library" when primary is Retry or Remove
+                    if (presentation.primaryAction != PlaybackErrorAction.BACK_TO_LIBRARY) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onBack,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Back to library")
+                        }
                     }
                 }
             }
@@ -172,7 +552,10 @@ internal fun PhaseBPlayerScreen(
 
 private fun Context.safePhaseBActivity(): Activity? {
     var current = this
-    while (current is ContextWrapper) { if (current is Activity) return current; current = current.baseContext }
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
     return null
 }
 
