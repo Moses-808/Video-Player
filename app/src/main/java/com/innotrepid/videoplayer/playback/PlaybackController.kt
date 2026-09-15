@@ -1,6 +1,7 @@
 package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -45,17 +46,23 @@ class PlaybackController(
     private var activeMediaUri: Uri? = null
 
     /**
-     * URI confirmed by ExoPlayer's media-item transition callback.
-     * This is intentionally separate from activeMediaUri: during a switch,
-     * player callbacks from the previous item must not be treated as events
-     * for the newly requested item until ExoPlayer confirms the transition.
+     * The exact MediaItem instance handed to ExoPlayer for the active switch.
+     * Reference identity matters here: if the user switches A -> B -> A,
+     * callbacks for the old A must not be accepted as callbacks for the new A.
      */
-    private var callbackMediaUri: Uri? = null
+    private var activeMediaItem: MediaItem? = null
+    private var callbackMediaItem: MediaItem? = null
 
     private val listener = object : Player.Listener {
-        override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-            callbackMediaUri = mediaItem?.localConfiguration?.uri
-            if (callbackMediaUri == activeMediaUri && !released) publish()
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            callbackMediaItem = mediaItem
+            if (!released &&
+                !switchingMedia &&
+                activeMediaItem != null &&
+                callbackMediaItem === activeMediaItem
+            ) {
+                publish()
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -136,15 +143,14 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
-        callbackMediaUri = null
+        callbackMediaItem = null
         mutableState.value = PlaybackUiState()
+        val mediaItem = MediaItem.fromUri(uri)
         activeMediaUri = uri
+        activeMediaItem = mediaItem
         player.stop()
         player.clearMediaItems()
-        player.setMediaItem(
-            androidx.media3.common.MediaItem.fromUri(uri),
-            startPositionMs.coerceAtLeast(0L)
-        )
+        player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
         player.prepare()
         player.playWhenReady = autoPlay
         switchingMedia = false
@@ -218,7 +224,8 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
-        callbackMediaUri = null
+        callbackMediaItem = null
+        activeMediaItem = null
         player.stop()
         player.clearMediaItems()
         activeMediaUri = null
@@ -242,7 +249,8 @@ class PlaybackController(
         }
         released = true
         activeMediaUri = null
-        callbackMediaUri = null
+        activeMediaItem = null
+        callbackMediaItem = null
         player.removeListener(listener)
         player.release()
     }
@@ -254,9 +262,8 @@ class PlaybackController(
     private fun hasActiveMediaCallback(): Boolean =
         !released &&
             !switchingMedia &&
-            player.currentMediaItem != null &&
-            player.currentMediaItem?.localConfiguration?.uri == activeMediaUri &&
-            callbackMediaUri == activeMediaUri
+            activeMediaItem != null &&
+            callbackMediaItem === activeMediaItem
 
     private fun publish() {
         if (released) return
