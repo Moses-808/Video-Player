@@ -85,7 +85,7 @@ internal fun VisonatePulse(
 }
 
 @Composable private fun PulseIdentity(videoCount: Int, recent: VideoItem?, prediction: Pair<VideoPrediction, VideoItem>?, confidence: Float, open: (VideoItem) -> Unit) {
-    Box(Modifier.fillMaxWidth().height(250.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(34.dp)).background(Brush.linearGradient(listOf(Color(0xFF07070C), Color(0xFF20123A), Color(0xFF063B43))))) {
+    Box(Modifier.fillMaxWidth().height(268.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(34.dp)).background(Brush.linearGradient(listOf(Color(0xFF07070C), Color(0xFF20123A), Color(0xFF063B43))))) {
         if (recent != null) {
             VisonateThumb(recent, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF507080D)))))
@@ -93,15 +93,244 @@ internal fun VisonatePulse(
         }
         Column(Modifier.fillMaxSize().padding(23.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(8.dp))
-                Text("VISONATE", color = Color.White, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f))
-                Surface(shape = RoundedCornerShape(14.dp), color = Color.Black.copy(alpha = .34f)) { Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(5.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.secondary)); Spacer(Modifier.width(6.dp)); Text("MOMENTUM LIVE", color = Color.White.copy(alpha = .78f), fontSize = 7.sp, letterSpacing = 1.sp) } }
+                Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("VISONATE", color = Color.White, fontSize = 12.sp, letterSpacing = 3.2.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Surface(shape = RoundedCornerShape(14.dp), color = Color.Black.copy(alpha = .34f)) {
+                    Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(5.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.secondary))
+                        Spacer(Modifier.width(6.dp))
+                        Text("MOMENTUM LIVE", color = Color.White.copy(alpha = .78f), fontSize = 7.sp, letterSpacing = 1.sp)
+                    }
+                }
             }
             Column {
-                Text(if (prediction != null) "Your next move is\nalready taking shape." else if (recent != null) "Stay in\nyour flow." else "Your watchspace\nis waiting.", color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp)); Text(if (prediction != null) "Momentum has a ${(confidence * 100).toInt()}% read on what comes next." else if (recent != null) "$videoCount videos • your trail is becoming a signal." else "$videoCount videos ready to become a rhythm.", color = Color.White.copy(alpha = .66f), fontSize = 10.sp)
-                if (recent != null) { Spacer(Modifier.height(10.dp)); Surface(onClick = { open(recent) }, shape = RoundedCornerShape(16.dp), color = Color.White.copy(alpha = .13f), contentColor = Color.White) { Row(Modifier.padding(horizontal = 13.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.PlayArrow, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Continue", fontSize = 11.sp) } } }
+                // Classic title treatment
+                Text(
+                    "Visonate",
+                    color = Color.White,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.5).sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (prediction != null) "Your next move is already taking shape."
+                    else if (recent != null) "Stay in your flow."
+                    else "Your watchspace is waiting.",
+                    color = Color.White.copy(alpha = .92f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (prediction != null) "Momentum has a ${(confidence * 100).toInt()}% read on what comes next."
+                    else if (recent != null) "$videoCount videos • your trail is becoming a signal."
+                    else "$videoCount videos ready to become a rhythm.",
+                    color = Color.White.copy(alpha = .66f),
+                    fontSize = 10.sp
+                )
+                if (recent != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Surface(onClick = { open(recent) }, shape = RoundedCornerShape(16.dp), color = Color.White.copy(alpha = .13f), contentColor = Color.White) {
+                        Row(Modifier.padding(horizontal = 13.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.PlayArrow, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Continue", fontSize = 11.sp)
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable private fun VisonatePredictionHero(prediction: Pair<VideoPrediction, VideoItem>, video: VideoItem, confidence: Float, open: (VideoItem) -> Unit, feedback: VideoPredictionFeedbackStore, isDefaultHero: Boolean) {
+    val model = prediction.first
+    LaunchedEffect(model.mediaId, isDefaultHero) { if (!isDefaultHero) feedback.recordShown(model.mediaId) }
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (pressed) .985f else 1f, tween(150), label = "visonatePredictionScale")
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text(if (isDefaultHero) "FEATURED PREVIEW" else "THE NEXT MOVE", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+                Text(if (isDefaultHero) "Start with this." else "I think this is next.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(if (isDefaultHero) "A long-form preview chosen for Pulse." else "Not a list. A signal.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            }
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)) {
+                Column(Modifier.padding(horizontal = 11.dp, vertical = 6.dp), horizontalAlignment = Alignment.End) {
+                    Text(if (isDefaultHero) "PULSE FEATURE" else "CONFIDENCE", fontSize = 7.sp, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isDefaultHero) "PINNED" else "${(confidence * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(292.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(RoundedCornerShape(31.dp)).clickable { pressed = true; if (!isDefaultHero) feedback.recordAccepted(model.mediaId); open(video) }) {
+            VideoPredictionPreview(video, Modifier.fillMaxSize(), model.previewPositionMs)
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .95f)))))
+            Column(Modifier.align(Alignment.BottomStart).padding(21.dp).padding(end = 72.dp)) {
+                Text(predictionReason(model).uppercase(), color = MaterialTheme.colorScheme.secondary, fontSize = 8.sp, letterSpacing = 1.2.sp, maxLines = 1, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(video.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text(predictionExplanation(model), color = Color.White.copy(alpha = .63f), fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            FilledIconButton(onClick = { pressed = true; if (!isDefaultHero) feedback.recordAccepted(model.mediaId); open(video) }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) {
+                Icon(Icons.Outlined.PlayArrow, "Play predicted video")
+            }
+        }
+    }
+}
+
+@Composable private fun PulseConnectCard(request: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(23.dp)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .11f)) {
+                Icon(Icons.Outlined.Storage, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Let Visonate see your library", style = MaterialTheme.typography.titleSmall)
+                Text("Your videos stay on this device.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = request) { Text("CONNECT") }
+        }
+    }
+}
+
+@Composable private fun VisonateShelf(title: String, subtitle: String, videos: List<VideoItem>, open: (VideoItem) -> Unit, favorite: (String) -> Unit, resume: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+        }
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(videos, key = { it.id }) { VisonateCard(it, open, favorite, resume) }
+        }
+    }
+}
+
+@Composable private fun VisonateSpaces(folders: List<String>, videos: List<VideoItem>, open: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text("Spaces", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Your folders, turned into places to return to.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+        }
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(folders, key = { it }) { folder ->
+                val count = videos.count { it.folderKey == folder }
+                Card(Modifier.width(194.dp).clickable { open(folder) }, RoundedCornerShape(22.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.secondary.copy(alpha = .11f)) {
+                            Icon(Icons.Outlined.Folder, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(10.dp))
+                        }
+                        Spacer(Modifier.height(15.dp))
+                        Text(folderNameForPulse(folder), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("$count videos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun VisonateOrbit(videos: List<VideoItem>, open: (VideoItem) -> Unit, favorite: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text("Orbit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Everything Visonate can draw from.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+        }
+        videos.take(16).forEach { video ->
+            Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp).animateContentSize().clickable { open(video) }, RoundedCornerShape(20.dp)) {
+                Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    VisonateThumb(video, Modifier.size(width = 116.dp, height = 72.dp).clip(RoundedCornerShape(14.dp)))
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(video.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                        video.folderName?.let { Text(it, color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp) }
+                    }
+                    IconButton(onClick = { favorite(video.id) }) {
+                        Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun VisonateEmpty(library: (String) -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(27.dp)) {
+        Box(Modifier.fillMaxWidth().height(215.dp).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .10f), MaterialTheme.colorScheme.secondary.copy(alpha = .08f))))) {
+            Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(shape = RoundedCornerShape(19.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .12f)) {
+                    Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(13.dp).size(25.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Nothing in orbit yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text("Import a local video and Visonate will start learning your viewing rhythm.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { library("") }) { Text("OPEN LIBRARY") }
+            }
+        }
+    }
+}
+
+@Composable private fun VisonateCard(video: VideoItem, open: (VideoItem) -> Unit, favorite: (String) -> Unit, progress: Boolean) {
+    Column(Modifier.width(194.dp).clickable { open(video) }) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).clip(RoundedCornerShape(21.dp))) {
+            VisonateThumb(video, Modifier.fillMaxSize())
+            if (progress) LinearProgressIndicator(progress = { video.progress }, Modifier.fillMaxWidth().align(Alignment.BottomCenter))
+            IconButton(onClick = { favorite(video.id) }, Modifier.align(Alignment.TopEnd)) {
+                Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = Color.White)
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(video.title, maxLines = 2, style = MaterialTheme.typography.titleSmall)
+        video.folderName?.let { Text(it, color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp) }
+    }
+}
+
+@Composable private fun VisonateThumb(video: VideoItem, modifier: Modifier) {
+    val context = LocalContext.current
+    var bitmap by remember(video.id) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(video.id, video.uri) {
+        bitmap = runCatching { VideoThumbnailLoader.load(context, video.uri, 480, 270) }.getOrNull()
+    }
+    if (bitmap != null) Image(bitmap!!.asImageBitmap(), video.title, modifier, contentScale = ContentScale.Crop)
+    else Box(modifier.background(Brush.linearGradient(listOf(Color(0xFF181823), Color(0xFF2C2050)))))
+}
+
+private fun folderNameForPulse(path: String): String = path.trimEnd('/').substringAfterLast('/').ifBlank { "Unsorted" }
+
+private fun predictionReason(prediction: VideoPrediction): String {
+    val reasons = prediction.reasons.toSet()
+    return when {
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons && VideoPrediction.Reason.RESUMEABLE in reasons -> "You were already on this path"
+        VideoPrediction.Reason.REWATCHED in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "You keep coming back to this"
+        VideoPrediction.Reason.RESUMEABLE in reasons -> "You left this unfinished"
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons -> "A natural continuation"
+        VideoPrediction.Reason.REWATCHED in reasons -> "You've returned here before"
+        VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "It's been on your mind lately"
+        VideoPrediction.Reason.PREVIOUSLY_COMPLETED in reasons -> "A familiar favorite"
+        VideoPrediction.Reason.RECENT_ABANDONMENT in reasons -> "Worth another look"
+        else -> "A natural next step"
+    }
+}
+
+private fun predictionExplanation(prediction: VideoPrediction): String {
+    val reasons = prediction.reasons.toSet()
+    return when {
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons && VideoPrediction.Reason.RESUMEABLE in reasons -> "You were moving through this collection and already started this one, so Momentum sees two signals pointing the same way."
+        VideoPrediction.Reason.REWATCHED in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "You've returned to this before, and your recent viewing keeps bringing it back into the picture."
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "Your recent viewing stayed close to this collection, making this feel like the next natural move."
+        VideoPrediction.Reason.RESUMEABLE in reasons && VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "You started this and your recent activity suggests it is still part of what you want to watch."
+        VideoPrediction.Reason.RESUMEABLE in reasons -> "You already started this, so Momentum is keeping your unfinished viewing close at hand."
+        VideoPrediction.Reason.SAME_FOLDER_CONTINUATION in reasons -> "The way you moved through this collection makes this a natural next step."
+        VideoPrediction.Reason.REWATCHED in reasons -> "You've finished or returned to this before, so it remains a strong candidate."
+        VideoPrediction.Reason.RECENTLY_ENGAGED in reasons -> "Your recent viewing activity is pointing toward this one."
+        VideoPrediction.Reason.PREVIOUSLY_COMPLETED in reasons -> "You've finished this before, and familiar choices can become part of your next viewing rhythm."
+        VideoPrediction.Reason.RECENT_ABANDONMENT in reasons -> "You left this one recently, so Momentum is keeping it in view without assuming you want it immediately."
+        else -> "Your viewing pattern makes this a plausible next step, even without a single strong signal."
     }
 }
