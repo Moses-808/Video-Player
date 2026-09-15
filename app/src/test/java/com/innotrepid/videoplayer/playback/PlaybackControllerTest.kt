@@ -6,9 +6,10 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Test
 import org.mockito.ArgumentCaptor
+import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
@@ -152,6 +153,7 @@ class PlaybackControllerTest {
             org.mockito.ArgumentMatchers.eq(0L)
         )
         val activeMediaItem = mediaItemCaptor.value
+        doReturn(activeMediaItem).`when`(player).currentMediaItem
         listener.value.onMediaItemTransition(
             activeMediaItem,
             Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
@@ -188,15 +190,16 @@ class PlaybackControllerTest {
             firstMediaItem,
             Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
         )
+        clearInvocations(player)
 
         controller.setMedia(uri, autoPlay = false)
         val secondCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
-        verify(player, org.mockito.Mockito.times(2)).setMediaItem(
+        verify(player).setMediaItem(
             secondCaptor.capture(),
             org.mockito.ArgumentMatchers.eq(0L)
         )
-        val secondMediaItem = secondCaptor.allValues.last()
-        assertNotEquals(firstMediaItem, secondMediaItem)
+        val secondMediaItem = secondCaptor.value
+        assertNotSame(firstMediaItem, secondMediaItem)
 
         listener.value.onMediaItemTransition(
             firstMediaItem,
