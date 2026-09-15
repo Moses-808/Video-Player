@@ -171,7 +171,7 @@ class PlaybackController(
 
     fun updateNavigation(hasNext: Boolean, hasPrevious: Boolean) {
         if (released) return
-        if (this.hasNext == hasNext && this.hasPrevious == ste.hasPrevious) return
+        if (this.hasNext == hasNext && this.hasPrevious == hasPrevious) return
         this.hasNext = hasNext
         this.hasPrevious = hasPrevious
         publish()
