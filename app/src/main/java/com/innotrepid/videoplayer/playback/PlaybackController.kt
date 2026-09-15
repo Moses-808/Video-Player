@@ -44,22 +44,17 @@ class PlaybackController(
     private var switchingMedia = false
     private var canRetry = false
     private var activeMediaUri: Uri? = null
-
-    /**
-     * The exact MediaItem instance handed to ExoPlayer for the active switch.
-     * Reference identity matters here: if the user switches A -> B -> A,
-     * callbacks for the old A must not be accepted as callbacks for the new A.
-     */
-    private var activeMediaItem: MediaItem? = null
-    private var callbackMediaItem: MediaItem? = null
+    private var mediaSequence = 0L
+    private var activeMediaId: String? = null
+    private var callbackMediaId: String? = null
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            callbackMediaItem = mediaItem
+            callbackMediaId = mediaItem?.mediaId
             if (!released &&
                 !switchingMedia &&
-                activeMediaItem != null &&
-                callbackMediaItem === activeMediaItem
+                activeMediaId != null &&
+                callbackMediaId == activeMediaId
             ) {
                 publish()
             }
@@ -143,11 +138,16 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
-        callbackMediaItem = null
+        callbackMediaId = null
         mutableState.value = PlaybackUiState()
-        val mediaItem = MediaItem.fromUri(uri)
+        mediaSequence += 1L
+        val mediaId = "playback-$mediaSequence"
+        val mediaItem = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(mediaId)
+            .build()
         activeMediaUri = uri
-        activeMediaItem = mediaItem
+        activeMediaId = mediaId
         player.stop()
         player.clearMediaItems()
         player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
@@ -220,15 +220,11 @@ class PlaybackController(
     /** Stop and unload the current media without destroying the controller. */
     fun clearMedia() {
         if (released) return
-        switchingMedia = true
-        started = false
-        completed = false
-        canRetry = false
-        callbackMediaItem = null
-        activeMediaItem = null
         player.stop()
         player.clearMediaItems()
         activeMediaUri = null
+        activeMediaId = null
+        callbackMediaId = null
         switchingMedia = false
         mutableState.value = PlaybackUiState()
     }
@@ -249,8 +245,8 @@ class PlaybackController(
         }
         released = true
         activeMediaUri = null
-        activeMediaItem = null
-        callbackMediaItem = null
+        activeMediaId = null
+        callbackMediaId = null
         player.removeListener(listener)
         player.release()
     }
@@ -262,8 +258,8 @@ class PlaybackController(
     private fun hasActiveMediaCallback(): Boolean =
         !released &&
             !switchingMedia &&
-            activeMediaItem != null &&
-            callbackMediaItem === activeMediaItem
+            activeMediaId != null &&
+            callbackMediaId == activeMediaId
 
     private fun publish() {
         if (released) return

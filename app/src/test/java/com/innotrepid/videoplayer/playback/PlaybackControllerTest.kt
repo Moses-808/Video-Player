@@ -6,7 +6,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.clearInvocations
@@ -199,7 +199,8 @@ class PlaybackControllerTest {
             org.mockito.ArgumentMatchers.eq(0L)
         )
         val secondMediaItem = secondCaptor.value
-        assertNotSame(firstMediaItem, secondMediaItem)
+        assertNotEquals(firstMediaItem.mediaId, secondMediaItem.mediaId)
+        assertEquals(uri, secondMediaItem.localConfiguration?.uri)
 
         listener.value.onMediaItemTransition(
             firstMediaItem,
