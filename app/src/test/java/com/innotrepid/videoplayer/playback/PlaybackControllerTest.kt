@@ -144,7 +144,7 @@ class PlaybackControllerTest {
         val controller = PlaybackController(player)
         val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
         verify(player).addListener(listener.capture())
-        val uri = Uri.parse("file:///retry-test.mp4")
+        val uri = mock(Uri::class.java)
         controller.setMedia(uri, autoPlay = false)
 
         val mediaItemCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
@@ -175,7 +175,7 @@ class PlaybackControllerTest {
         val controller = PlaybackController(player)
         val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
         verify(player).addListener(listener.capture())
-        val uri = Uri.parse("file:///same-media.mp4")
+        val uri = mock(Uri::class.java)
         val error = mock(PlaybackException::class.java)
         doReturn("stale callback").`when`(error).message
 
