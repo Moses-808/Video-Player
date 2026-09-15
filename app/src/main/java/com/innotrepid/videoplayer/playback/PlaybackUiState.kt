@@ -20,6 +20,8 @@ data class PlaybackUiState(
     val subtitleTracks: List<SubtitleTrackOption> = emptyList(),
     val selectedSubtitleTrackId: String? = null,
     val subtitlesEnabled: Boolean = false,
+    val hasExternalSubtitle: Boolean = false,
+    val externalSubtitleLabel: String? = null,
     val errorMessage: String? = null,
 )
 
