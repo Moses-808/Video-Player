@@ -15,5 +15,15 @@ data class PlaybackUiState(
     val isMuted: Boolean = false,
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
+    val audioTracks: List<AudioTrackOption> = emptyList(),
+    val selectedAudioTrackId: String? = null,
     val errorMessage: String? = null,
+)
+
+/** One selectable audio track exposed to the player UI. */
+data class AudioTrackOption(
+    val id: String,
+    val label: String,
+    val language: String? = null,
+    val isSelected: Boolean = false,
 )
