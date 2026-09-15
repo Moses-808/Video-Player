@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.Audiotrack
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -108,6 +109,7 @@ internal fun PhaseBPlayerScreen(
     var landscape by remember { mutableStateOf(false) }
     var speedMenu by remember { mutableStateOf(false) }
     var volumeMenu by remember { mutableStateOf(false) }
+    var audioMenu by remember { mutableStateOf(false) }
     var upNextExpanded by remember { mutableStateOf(false) }
     var scrub by remember(video.id) { mutableFloatStateOf(Float.NaN) }
     var playerResizeMode by remember { mutableStateOf(PlayerResizeMode.FIT) }
@@ -349,6 +351,7 @@ internal fun PhaseBPlayerScreen(
                         IconButton(onClick = {
                             volumeMenu = !volumeMenu
                             speedMenu = false
+                            audioMenu = false
                         }) {
                             Icon(
                                 if (state.isMuted) Icons.Outlined.VolumeOff
@@ -384,10 +387,47 @@ internal fun PhaseBPlayerScreen(
                             }
                         }
                     }
+                    if (state.audioTracks.isNotEmpty()) {
+                        Box {
+                            IconButton(
+                                onClick = {
+                                    audioMenu = !audioMenu
+                                    speedMenu = false
+                                    volumeMenu = false
+                                },
+                            ) {
+                                Icon(Icons.Outlined.Audiotrack, "Audio track", tint = Color.White)
+                            }
+                            DropdownMenu(
+                                expanded = audioMenu,
+                                onDismissRequest = { audioMenu = false },
+                            ) {
+                                state.audioTracks.forEach { track ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (track.isSelected) "✓ ${track.label}" else track.label,
+                                                color = if (track.isSelected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    Color.Unspecified
+                                                },
+                                            )
+                                        },
+                                        onClick = {
+                                            controller.selectAudioTrack(track.id)
+                                            audioMenu = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Box {
                         IconButton(onClick = {
                             speedMenu = !speedMenu
                             volumeMenu = false
+                            audioMenu = false
                         }) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Outlined.Speed, "Speed", tint = Color.White)
