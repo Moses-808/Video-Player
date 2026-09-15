@@ -278,7 +278,7 @@ class PlaybackController(
     }
 
     private fun isRetryablePlaybackError(error: PlaybackException): Boolean {
-        val code = error.errorCodeName.uppercase()
+        val code = error.errorCodeName.orEmpty().uppercase()
         val detail = error.message.orEmpty().lowercase()
 
         // These failures require a different user action or a different media
