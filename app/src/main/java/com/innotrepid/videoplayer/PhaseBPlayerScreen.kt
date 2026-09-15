@@ -27,10 +27,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.FitScreen
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
@@ -107,10 +110,10 @@ internal fun PhaseBPlayerScreen(
     var volumeMenu by remember { mutableStateOf(false) }
     var upNextExpanded by remember { mutableStateOf(false) }
     var scrub by remember(video.id) { mutableFloatStateOf(Float.NaN) }
+    var resizeMode by remember { mutableStateOf(PlayerResizeMode.FIT) }
     val next = queue?.next
     val previous = queue?.previous
 
-    // Keep queue navigation flags in PlaybackUiState so controls share one source of truth.
     LaunchedEffect(queue?.next?.id, queue?.previous?.id) {
         controller.updateNavigation(
             hasNext = next != null,
@@ -124,8 +127,10 @@ internal fun PhaseBPlayerScreen(
             if (fullscreen) bars.hide(WindowInsetsCompat.Type.systemBars())
             else bars.show(WindowInsetsCompat.Type.systemBars())
             host.requestedOrientation =
-                if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                when {
+                    landscape || fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
         }
         onDispose { }
     }
@@ -158,10 +163,13 @@ internal fun PhaseBPlayerScreen(
                     this.player = player
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    resizeMode = resizeMode.toMedia3()
                 }
             },
-            update = { it.player = player },
+            update = {
+                it.player = player
+                it.resizeMode = resizeMode.toMedia3()
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .clickable { chromeVisible = !chromeVisible },
@@ -325,6 +333,7 @@ internal fun PhaseBPlayerScreen(
                                 controller.seekTo(scrub.toLong())
                                 scrub = Float.NaN
                             },
+                            valueRange = 0f..state.durationMs.toFloat().coerceAtLeast(1f),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -382,15 +391,32 @@ internal fun PhaseBPlayerScreen(
                             speedMenu = !speedMenu
                             volumeMenu = false
                         }) {
-                            Icon(Icons.Outlined.Speed, "Speed", tint = Color.White)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Outlined.Speed, "Speed", tint = Color.White)
+                                Text(
+                                    formatPlaybackSpeed(state.playbackSpeed),
+                                    color = Color.White.copy(alpha = .85f),
+                                    fontSize = 9.sp,
+                                )
+                            }
                         }
                         DropdownMenu(
                             expanded = speedMenu,
                             onDismissRequest = { speedMenu = false },
                         ) {
                             listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                                val selected = kotlin.math.abs(state.playbackSpeed - speed) < 0.01f
                                 DropdownMenuItem(
-                                    text = { Text("${speed}x") },
+                                    text = {
+                                        Text(
+                                            if (selected) "✓ ${speed}x" else "${speed}x",
+                                            color = if (selected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                Color.Unspecified
+                                            },
+                                        )
+                                    },
                                     onClick = {
                                         controller.setSpeed(speed)
                                         speedMenu = false
@@ -399,7 +425,22 @@ internal fun PhaseBPlayerScreen(
                             }
                         }
                     }
-                    IconButton(onClick = { landscape = !landscape }) {
+                    IconButton(
+                        onClick = {
+                            resizeMode = resizeMode.next()
+                            chromeVisible = true
+                        },
+                    ) {
+                        Icon(
+                            resizeMode.icon,
+                            contentDescription = "Aspect ratio: ${resizeMode.label}",
+                            tint = Color.White,
+                        )
+                    }
+                    IconButton(onClick = {
+                        landscape = !landscape
+                        if (landscape) fullscreen = true
+                    }) {
                         Icon(Icons.Outlined.ScreenRotation, "Rotate", tint = Color.White)
                     }
                 }
@@ -441,6 +482,10 @@ internal fun PhaseBPlayerScreen(
                                         color = Color.White,
                                         style = MaterialTheme.typography.labelMedium,
                                     )
+                                    Spacer(Modifier.height(6.dp))
+                                    Button(onClick = { open(next) }) {
+                                        Text("Play next")
+                                    }
                                 }
                             }
                         }
@@ -554,6 +599,48 @@ private fun PlaybackErrorOverlay(
             }
         }
     }
+}
+
+private enum class PlayerResizeMode {
+    FIT,
+    FILL,
+    ZOOM,
+    ;
+
+    val label: String
+        get() = when (this) {
+            FIT -> "Fit"
+            FILL -> "Fill"
+            ZOOM -> "Zoom"
+        }
+
+    val icon
+        get() = when (this) {
+            FIT -> Icons.Outlined.FitScreen
+            FILL -> Icons.Outlined.AspectRatio
+            ZOOM -> Icons.Outlined.CropFree
+        }
+
+    fun next(): PlayerResizeMode = when (this) {
+        FIT -> FILL
+        FILL -> ZOOM
+        ZOOM -> FIT
+    }
+
+    fun toMedia3(): Int = when (this) {
+        FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+        ZOOM -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    }
+}
+
+private fun formatPlaybackSpeed(speed: Float): String {
+    val normalized = if (kotlin.math.abs(speed - speed.toInt()) < 0.01f) {
+        speed.toInt().toString()
+    } else {
+        "%.2g".format(speed)
+    }
+    return "${normalized}x"
 }
 
 private fun Context.safePhaseBActivity(): Activity? {
