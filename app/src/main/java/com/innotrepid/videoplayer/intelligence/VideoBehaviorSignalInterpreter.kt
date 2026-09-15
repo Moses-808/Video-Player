@@ -1,5 +1,7 @@
 package com.innotrepid.videoplayer.intelligence
 
+import java.util.logging.Logger
+
 /**
  * Converts raw Momentum playback events into higher-value behavioral observations.
  *
@@ -13,6 +15,8 @@ object VideoBehaviorSignalInterpreter {
         val folderKey: String? = null,
         val durationMs: Long = 0L
     )
+
+    private val logger = Logger.getLogger(VideoBehaviorSignalInterpreter::class.java.name)
 
     fun interpret(
         events: List<MomentumEvent>,
@@ -138,6 +142,15 @@ object VideoBehaviorSignalInterpreter {
         nowMs: Long
     ) {
         if (durationMs <= 0L || positionMs < 0L) return
+        
+        // Defensive check: log if position exceeds duration (data corruption indicator)
+        if (positionMs > durationMs) {
+            logger.warning(
+                "VideoBehaviorSignal: position ($positionMs ms) exceeds duration ($durationMs ms) for mediaId=$mediaId. " +
+                "This may indicate corrupted metadata or rounding errors from MediaStore."
+            )
+        }
+        
         val fraction = (positionMs.toDouble() / durationMs.toDouble()).toFloat().coerceIn(0f, 1f)
 
         when {
