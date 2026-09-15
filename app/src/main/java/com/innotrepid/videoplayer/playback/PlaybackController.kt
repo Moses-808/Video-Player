@@ -66,7 +66,9 @@ class PlaybackController(
     private var subtitleBackground = true
     private var pendingSubtitleText = ""
     private var displayedSubtitleText = ""
-    private val mainHandler = Handler(Looper.getMainLooper())
+    /** Null in pure JVM unit tests where there is no main looper. */
+    private val mainHandler: Handler? =
+        runCatching { Looper.getMainLooper()?.let { Handler(it) } }.getOrNull()
     private var subtitlePublishRunnable: Runnable? = null
 
     private val listener = object : Player.Listener {
@@ -352,7 +354,8 @@ class PlaybackController(
 
     private fun scheduleSubtitleText(text: String) {
         pendingSubtitleText = text
-        subtitlePublishRunnable?.let { mainHandler.removeCallbacks(it) }
+        val handler = mainHandler
+        subtitlePublishRunnable?.let { pending -> handler?.removeCallbacks(pending) }
         subtitlePublishRunnable = null
         if (text.isEmpty()) {
             displayedSubtitleText = ""
@@ -360,7 +363,8 @@ class PlaybackController(
             return
         }
         val delay = subtitleDelayMs
-        if (delay <= 0L) {
+        // No delay, or no main looper (unit tests): apply immediately.
+        if (delay <= 0L || handler == null) {
             displayedSubtitleText = text
             publish()
             return
@@ -370,11 +374,12 @@ class PlaybackController(
             publish()
         }
         subtitlePublishRunnable = runnable
-        mainHandler.postDelayed(runnable, delay)
+        handler.postDelayed(runnable, delay)
     }
 
     private fun clearScheduledSubtitles() {
-        subtitlePublishRunnable?.let { mainHandler.removeCallbacks(it) }
+        val handler = mainHandler
+        subtitlePublishRunnable?.let { pending -> handler?.removeCallbacks(pending) }
         subtitlePublishRunnable = null
         pendingSubtitleText = ""
         displayedSubtitleText = ""
