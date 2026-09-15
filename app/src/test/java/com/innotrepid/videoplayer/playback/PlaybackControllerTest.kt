@@ -7,7 +7,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Ignore
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.clearInvocations
@@ -108,7 +108,7 @@ class PlaybackControllerTest {
         val mediaItemCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
         verify(player).setMediaItem(
             mediaItemCaptor.capture(),
-            org.mockito.ArgumentMatchers.eq(42_000L)
+            org.mockito.ArgumentMatchers.eq(42_000L),
         )
         assertEquals(uri, mediaItemCaptor.value.localConfiguration?.uri)
         verify(player).prepare()
@@ -151,13 +151,13 @@ class PlaybackControllerTest {
         val mediaItemCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
         verify(player).setMediaItem(
             mediaItemCaptor.capture(),
-            org.mockito.ArgumentMatchers.eq(0L)
+            org.mockito.ArgumentMatchers.eq(0L),
         )
         val activeMediaItem = mediaItemCaptor.value
         doReturn(activeMediaItem).`when`(player).currentMediaItem
         listener.value.onMediaItemTransition(
             activeMediaItem,
-            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
         )
         val error = mock(PlaybackException::class.java)
         doReturn("retry test").`when`(error).message
@@ -172,7 +172,6 @@ class PlaybackControllerTest {
         controller.release()
     }
 
-    @Ignore("TODO: Fix error message format assertion - needs error code in PlaybackController")
     @Test
     fun lateCallbacksFromPreviousMediaAreIgnoredAfterSwitch() {
         val controller = PlaybackController(player)
@@ -187,12 +186,13 @@ class PlaybackControllerTest {
         val firstCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
         verify(player).setMediaItem(
             firstCaptor.capture(),
-            org.mockito.ArgumentMatchers.eq(0L)
+            org.mockito.ArgumentMatchers.eq(0L),
         )
         val firstMediaItem = firstCaptor.value
+        doReturn(firstMediaItem).`when`(player).currentMediaItem
         listener.value.onMediaItemTransition(
             firstMediaItem,
-            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
         )
         clearInvocations(player)
 
@@ -200,25 +200,48 @@ class PlaybackControllerTest {
         val secondCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
         verify(player).setMediaItem(
             secondCaptor.capture(),
-            org.mockito.ArgumentMatchers.eq(0L)
+            org.mockito.ArgumentMatchers.eq(0L),
         )
         val secondMediaItem = secondCaptor.value
         assertNotEquals(firstMediaItem.mediaId, secondMediaItem.mediaId)
         assertEquals(uri, secondMediaItem.localConfiguration?.uri)
 
+        // Player still briefly reports the old item — stale transition + error must not win.
+        doReturn(firstMediaItem).`when`(player).currentMediaItem
         listener.value.onMediaItemTransition(
             firstMediaItem,
-            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
         )
         listener.value.onPlayerError(error)
-        assertEquals(null, controller.state.value.errorMessage)
+        assertNull(controller.state.value.errorMessage)
 
+        // Active generation becomes current — error should surface.
+        doReturn(secondMediaItem).`when`(player).currentMediaItem
         listener.value.onMediaItemTransition(
             secondMediaItem,
-            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
         )
         listener.value.onPlayerError(error)
         assertEquals("STALE_ERROR: stale callback", controller.state.value.errorMessage)
+        controller.release()
+    }
+
+    @Test
+    fun successiveSetMediaAllocatesDistinctMediaIds() {
+        val uri = mock(Uri::class.java)
+        val controller = PlaybackController(player)
+
+        controller.setMedia(uri, autoPlay = false)
+        val first = ArgumentCaptor.forClass(MediaItem::class.java)
+        verify(player).setMediaItem(first.capture(), org.mockito.ArgumentMatchers.eq(0L))
+        clearInvocations(player)
+
+        controller.setMedia(uri, autoPlay = false)
+        val second = ArgumentCaptor.forClass(MediaItem::class.java)
+        verify(player).setMediaItem(second.capture(), org.mockito.ArgumentMatchers.eq(0L))
+
+        assertNotEquals(first.value.mediaId, second.value.mediaId)
+        assertEquals(second.value.mediaId, controller.currentMediaId())
         controller.release()
     }
 
