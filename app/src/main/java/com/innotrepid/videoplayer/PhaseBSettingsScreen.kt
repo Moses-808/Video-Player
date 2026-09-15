@@ -84,7 +84,6 @@ fun PhaseBSettingsScreen(
         context.getSharedPreferences("video_player_preferences", 0)
     }
 
-    // Playback defaults
     var defaultSpeed by remember {
         mutableFloatStateOf(prefs.getFloat("default_playback_speed", 1f))
     }
@@ -95,7 +94,6 @@ fun PhaseBSettingsScreen(
         mutableStateOf(prefs.getBoolean("auto_pip_on_leave", true))
     }
 
-    // Subtitle defaults
     var subtitleBg by remember {
         mutableStateOf(prefs.getBoolean("subtitle_background", true))
     }
@@ -103,7 +101,6 @@ fun PhaseBSettingsScreen(
         mutableFloatStateOf(prefs.getFloat("subtitle_text_size_sp", 18f))
     }
 
-    // Gesture defaults
     var gesturesEnabled by remember {
         mutableStateOf(prefs.getBoolean("gestures_enabled", true))
     }
@@ -120,19 +117,20 @@ fun PhaseBSettingsScreen(
         mutableStateOf(prefs.getBoolean("horizontal_seek_scrub", true))
     }
 
-    // Expand state — intelligence starts open; others collapsed
-    var openIntelligence by remember { mutableStateOf(true) }
-    var openPlayback by remember { mutableStateOf(false) }
-    var openSubtitles by remember { mutableStateOf(false) }
-    var openAudio by remember { mutableStateOf(false) }
-    var openGestures by remember { mutableStateOf(false) }
-    var openAppearance by remember { mutableStateOf(false) }
-    var openLibrary by remember { mutableStateOf(false) }
-    var openDiagnostics by remember { mutableStateOf(false) }
-    var openAbout by remember { mutableStateOf(false) }
+    var sectionIntelligence by remember { mutableStateOf(true) }
+    var sectionPlayback by remember { mutableStateOf(false) }
+    var sectionSubtitles by remember { mutableStateOf(false) }
+    var sectionAudio by remember { mutableStateOf(false) }
+    var sectionGestures by remember { mutableStateOf(false) }
+    var sectionAppearance by remember { mutableStateOf(false) }
+    var sectionLibrary by remember { mutableStateOf(false) }
+    var sectionDiagnostics by remember { mutableStateOf(false) }
+    var sectionAbout by remember { mutableStateOf(false) }
 
     fun persist(block: SharedPreferences.Editor.() -> Unit) {
-        prefs.edit().apply(block).apply()
+        val editor = prefs.edit()
+        editor.block()
+        editor.apply()
     }
 
     LazyColumn(
@@ -154,8 +152,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Intelligence",
                 subtitle = "Momentum predictions and learning",
-                expanded = openIntelligence,
-                onToggle = { openIntelligence = !openIntelligence },
+                expanded = sectionIntelligence,
+                onToggle = { sectionIntelligence = !sectionIntelligence },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.AutoAwesome,
@@ -187,8 +185,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Playback",
                 subtitle = "Resume, speed, Up Next, PiP",
-                expanded = openPlayback,
-                onToggle = { openPlayback = !openPlayback },
+                expanded = sectionPlayback,
+                onToggle = { sectionPlayback = !sectionPlayback },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.PlayCircleOutline,
@@ -249,8 +247,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Subtitles",
                 subtitle = "Default size and background",
-                expanded = openSubtitles,
-                onToggle = { openSubtitles = !openSubtitles },
+                expanded = sectionSubtitles,
+                onToggle = { sectionSubtitles = !sectionSubtitles },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.TextFields,
@@ -301,8 +299,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Audio",
                 subtitle = "Volume and effects",
-                expanded = openAudio,
-                onToggle = { openAudio = !openAudio },
+                expanded = sectionAudio,
+                onToggle = { sectionAudio = !sectionAudio },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.VolumeUp,
@@ -325,8 +323,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Gestures",
                 subtitle = "Taps, seeks, brightness, volume",
-                expanded = openGestures,
-                onToggle = { openGestures = !openGestures },
+                expanded = sectionGestures,
+                onToggle = { sectionGestures = !sectionGestures },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.Gesture,
@@ -385,8 +383,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Appearance",
                 subtitle = "Theme",
-                expanded = openAppearance,
-                onToggle = { openAppearance = !openAppearance },
+                expanded = sectionAppearance,
+                onToggle = { sectionAppearance = !sectionAppearance },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.DarkMode,
@@ -400,8 +398,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Library",
                 subtitle = "Access and import",
-                expanded = openLibrary,
-                onToggle = { openLibrary = !openLibrary },
+                expanded = sectionLibrary,
+                onToggle = { sectionLibrary = !sectionLibrary },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.Storage,
@@ -426,8 +424,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "Diagnostics",
                 subtitle = "Export and clear local events",
-                expanded = openDiagnostics,
-                onToggle = { openDiagnostics = !openDiagnostics },
+                expanded = sectionDiagnostics,
+                onToggle = { sectionDiagnostics = !sectionDiagnostics },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.BugReport,
@@ -450,8 +448,8 @@ fun PhaseBSettingsScreen(
             PhaseBExpandableSettingCard(
                 title = "About",
                 subtitle = "Visonate info and privacy",
-                expanded = openAbout,
-                onToggle = { openAbout = !openAbout },
+                expanded = sectionAbout,
+                onToggle = { sectionAbout = !sectionAbout },
             ) {
                 PhaseBSettingRow(
                     Icons.Outlined.Info,
