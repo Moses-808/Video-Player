@@ -14,8 +14,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,7 +84,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,6 +99,7 @@ import com.innotrepid.videoplayer.intelligence.VideoSessionQueue
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.playback.PlaybackController
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 @Composable
 internal fun PhaseBPlayerScreen(
@@ -121,6 +125,8 @@ internal fun PhaseBPlayerScreen(
     var upNextExpanded by remember { mutableStateOf(false) }
     var scrub by remember(video.id) { mutableFloatStateOf(Float.NaN) }
     var gestureHint by remember { mutableStateOf<String?>(null) }
+    var speedBoostActive by remember { mutableStateOf(false) }
+    var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
     var brightness by remember {
         mutableFloatStateOf(
             activity?.window?.attributes?.screenBrightness
@@ -129,6 +135,7 @@ internal fun PhaseBPlayerScreen(
         )
     }
     var playerResizeMode by remember { mutableStateOf(PlayerResizeMode.FIT) }
+    val viewConfiguration = LocalViewConfiguration.current
     val pickSubtitle = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -178,16 +185,19 @@ internal fun PhaseBPlayerScreen(
                 bars.show(WindowInsetsCompat.Type.systemBars())
                 host.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
+            if (speedBoostActive) {
+                controller.setSpeed(speedBeforeBoost)
+            }
         }
     }
     LaunchedEffect(chromeVisible, upNextExpanded, state.isPlaying) {
-        if (chromeVisible && state.errorMessage == null && !upNextExpanded) {
+        if (chromeVisible && state.errorMessage == null && !upNextExpanded && !speedBoostActive) {
             delay(if (state.isPlaying) 3500L else 6000L)
             chromeVisible = false
         }
     }
-    LaunchedEffect(gestureHint) {
-        if (gestureHint != null) {
+    LaunchedEffect(gestureHint, speedBoostActive) {
+        if (gestureHint != null && !speedBoostActive) {
             delay(900L)
             gestureHint = null
         }
@@ -223,8 +233,11 @@ internal fun PhaseBPlayerScreen(
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { chromeVisible = !chromeVisible },
+                        onTap = {
+                            if (!speedBoostActive) chromeVisible = !chromeVisible
+                        },
                         onDoubleTap = { offset ->
+                            if (speedBoostActive) return@detectTapGestures
                             val third = size.width / 3f
                             when {
                                 offset.x < third -> {
@@ -242,40 +255,96 @@ internal fun PhaseBPlayerScreen(
                             }
                             chromeVisible = true
                         },
-                    )
-                }
-                .pointerInput(Unit) {
-                    var startVolume = state.volume
-                    var startBrightness = brightness
-                    var startX = 0f
-                    var totalDrag = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { offset ->
-                            startX = offset.x
-                            startVolume = state.volume
-                            startBrightness = brightness
-                            totalDrag = 0f
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            totalDrag += -dragAmount
-                            val fraction = (totalDrag / size.height.toFloat()).coerceIn(-1f, 1f)
-                            if (startX < size.width / 2f) {
-                                val next = (startBrightness + fraction).coerceIn(0.01f, 1f)
-                                brightness = next
-                                activity?.window?.let { win ->
-                                    val lp = win.attributes
-                                    lp.screenBrightness = next
-                                    win.attributes = lp
-                                }
-                                gestureHint = "Brightness ${(next * 100).toInt()}%"
-                            } else {
-                                val next = (startVolume + fraction).coerceIn(0f, 1f)
-                                controller.setVolume(next)
-                                gestureHint = "Volume ${(next * 100).toInt()}%"
+                        onPress = {
+                            tryAwaitRelease()
+                            if (speedBoostActive) {
+                                controller.setSpeed(speedBeforeBoost)
+                                speedBoostActive = false
+                                gestureHint = formatPlaybackSpeed(speedBeforeBoost)
                             }
                         },
+                        onLongPress = {
+                            if (speedBoostActive) return@detectTapGestures
+                            speedBeforeBoost = state.playbackSpeed.coerceIn(0.25f, 4f)
+                            speedBoostActive = true
+                            controller.setSpeed(2f)
+                            gestureHint = "2× hold"
+                            chromeVisible = false
+                        },
                     )
+                }
+                .pointerInput(state.durationMs) {
+                    val touchSlop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var lockedHorizontal: Boolean? = null
+                        var totalX = 0f
+                        var totalY = 0f
+                        var startVolume = state.volume
+                        var startBrightness = brightness
+                        var startPosition = state.positionMs.toFloat()
+                        val duration = state.durationMs.toFloat().coerceAtLeast(1f)
+                        val seekRangeMs = minOf(duration, 90_000f)
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                if (lockedHorizontal == true && !scrub.isNaN()) {
+                                    controller.seekTo(scrub.toLong())
+                                    scrub = Float.NaN
+                                }
+                                break
+                            }
+                            val dx = change.positionChange().x
+                            val dy = change.positionChange().y
+                            change.consume()
+                            totalX += dx
+                            totalY += dy
+
+                            if (lockedHorizontal == null) {
+                                if (abs(totalX) > touchSlop || abs(totalY) > touchSlop) {
+                                    lockedHorizontal = abs(totalX) >= abs(totalY)
+                                    if (lockedHorizontal == true) {
+                                        startPosition = state.positionMs.toFloat()
+                                    } else {
+                                        startVolume = state.volume
+                                        startBrightness = brightness
+                                        totalX = 0f
+                                        totalY = 0f
+                                    }
+                                }
+                                continue
+                            }
+
+                            if (lockedHorizontal == true) {
+                                if (duration <= 1f) continue
+                                val fraction = (totalX / size.width.toFloat()).coerceIn(-1f, 1f)
+                                val target = (startPosition + fraction * seekRangeMs)
+                                    .coerceIn(0f, duration)
+                                scrub = target
+                                val deltaSec = ((target - startPosition) / 1000f).toInt()
+                                val sign = if (deltaSec >= 0) "+" else ""
+                                gestureHint = "$sign${deltaSec}s → ${formatPhaseBTime(target.toLong())}"
+                            } else {
+                                val fraction = (-totalY / size.height.toFloat()).coerceIn(-1f, 1f)
+                                if (down.position.x < size.width / 2f) {
+                                    val next = (startBrightness + fraction).coerceIn(0.01f, 1f)
+                                    brightness = next
+                                    activity?.window?.let { win ->
+                                        val lp = win.attributes
+                                        lp.screenBrightness = next
+                                        win.attributes = lp
+                                    }
+                                    gestureHint = "Brightness ${(next * 100).toInt()}%"
+                                } else {
+                                    val next = (startVolume + fraction).coerceIn(0f, 1f)
+                                    controller.setVolume(next)
+                                    gestureHint = "Volume ${(next * 100).toInt()}%"
+                                }
+                            }
+                        }
+                    }
                 },
         )
 
@@ -675,7 +744,7 @@ internal fun PhaseBPlayerScreen(
                         }
                         DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
                             listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                                val selected = kotlin.math.abs(state.playbackSpeed - speed) < 0.01f
+                                val selected = abs(state.playbackSpeed - speed) < 0.01f
                                 DropdownMenuItem(
                                     text = {
                                         Text(
@@ -839,7 +908,7 @@ private enum class PlayerResizeMode {
 }
 
 private fun formatPlaybackSpeed(speed: Float): String {
-    val normalized = if (kotlin.math.abs(speed - speed.toInt()) < 0.01f) speed.toInt().toString() else "%.2g".format(speed)
+    val normalized = if (abs(speed - speed.toInt()) < 0.01f) speed.toInt().toString() else "%.2g".format(speed)
     return "${normalized}x"
 }
 
