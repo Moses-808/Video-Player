@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -191,7 +190,6 @@ internal fun LibraryExperienceV2(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryV2Home(
     videos: List<VideoItem>,
@@ -210,52 +208,50 @@ private fun LibraryV2Home(
     previewingKey: String?,
     setPreviewingKey: (String?) -> Unit
 ) {
-    LazyColumn(
-        contentPadding = PaddingValues(top = 14.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        item { LibraryV2Masthead(videos.size, folders.size, add) }
-
-        stickyHeader {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
-            ) {
+    Column(Modifier.fillMaxSize()) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column {
+                LibraryV2Masthead(videos.size, folders.size, add)
                 LibraryV2Search(search, setSearch)
             }
         }
-
-        if (search.isBlank() && continueWatching.isNotEmpty()) {
-            item { LibraryV2Section("CONTINUE WATCHING", "Pick up exactly where you left off") }
-            item { LibraryV2ContinueShelf(continueWatching, open, previewingKey, setPreviewingKey) }
-        }
-
-        item { LibraryV2Section("COLLECTIONS", "Your folders, reframed as destinations") }
-        if (folders.isEmpty()) {
-            item { LibraryV2Empty(search.isNotBlank(), add) }
-        } else {
-            items(folders, key = { "collection-$it" }) { path ->
-                val collectionVideos = filtered.filter { it.relativePath?.trimEnd('/') == path.trimEnd('/') }
-                LibraryV2CollectionCard(path, collectionVideos.size, collectionVideos.firstOrNull(), openFolder)
+        LazyColumn(
+            contentPadding = PaddingValues(top = 10.dp, bottom = 112.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            if (search.isBlank() && continueWatching.isNotEmpty()) {
+                item { LibraryV2Section("CONTINUE WATCHING", "Pick up exactly where you left off") }
+                item { LibraryV2ContinueShelf(continueWatching, open, previewingKey, setPreviewingKey) }
             }
-        }
 
-        item {
-            Row(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("ALL VIDEOS", style = MaterialTheme.typography.labelLarge, letterSpacing = 1.6.sp)
-                    Text("${ordered.size} visible  •  ${videos.size} total", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            item { LibraryV2Section("COLLECTIONS", "Your folders, reframed as destinations") }
+            if (folders.isEmpty()) {
+                item { LibraryV2Empty(search.isNotBlank(), add) }
+            } else {
+                items(folders, key = { "collection-$it" }) { path ->
+                    val collectionVideos = filtered.filter { it.relativePath?.trimEnd('/') == path.trimEnd('/') }
+                    LibraryV2CollectionCard(path, collectionVideos.size, collectionVideos.firstOrNull(), openFolder)
                 }
-                LibraryV2SortChip(sort, setSort)
             }
-        }
-        if (ordered.isEmpty()) {
-            item { LibraryV2Empty(search.isNotBlank(), add) }
-        } else {
-            items(ordered, key = { it.id }) { video -> LibraryV2VideoCard(video, open, favorite, previewingKey, setPreviewingKey) }
+
+            item {
+                Row(
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("ALL VIDEOS", style = MaterialTheme.typography.labelLarge, letterSpacing = 1.6.sp)
+                        Text("${ordered.size} visible  •  ${videos.size} total", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    LibraryV2SortChip(sort, setSort)
+                }
+            }
+            if (ordered.isEmpty()) {
+                item { LibraryV2Empty(search.isNotBlank(), add) }
+            } else {
+                items(ordered, key = { it.id }) { video -> LibraryV2VideoCard(video, open, favorite, previewingKey, setPreviewingKey) }
+            }
         }
     }
 }
@@ -396,7 +392,11 @@ private fun LibraryV2SortChip(sort: LibraryV2Sort, setSort: (LibraryV2Sort) -> U
         LibraryV2Sort.TITLE -> LibraryV2Sort.PROGRESS
         LibraryV2Sort.PROGRESS -> LibraryV2Sort.RECENT
     }
-    Surface(modifier.clickable { setSort(next) }, RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+    Surface(
+        modifier = Modifier.clickable { setSort(next) },
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Sort, null, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(5.dp))
@@ -437,13 +437,16 @@ private fun LibraryV2VideoCard(
                 if (video.isResumeable) Text(formatLibraryV2Progress(video), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { favorite(video.id) }) {
-                Icon(if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Save", tint = if (video.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                    "Save",
+                    tint = if (video.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryV2Collection(
     folder: String?,
@@ -459,54 +462,79 @@ private fun LibraryV2Collection(
     previewingKey: String?,
     setPreviewingKey: (String?) -> Unit
 ) {
-    LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
-        stickyHeader {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
-            ) {
-                Column(Modifier.padding(vertical = 4.dp)) {
-                    Row(
-                        Modifier.padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = back) { Icon(Icons.Outlined.ArrowBack, "Back") }
-                        Column(Modifier.weight(1f)) {
-                            AdaptiveLibraryText(libraryV2FolderName(folder.orEmpty()), MaterialTheme.colorScheme.onBackground, MaterialTheme.typography.headlineSmall, 28.sp, 2)
-                            Text("${videos.size} videos in this collection", fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
-                        }
-                        Icon(Icons.Outlined.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
+    Column(Modifier.fillMaxSize()) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = back) { Icon(Icons.Outlined.ArrowBack, "Back") }
+                    Column(Modifier.weight(1f)) {
+                        AdaptiveLibraryText(libraryV2FolderName(folder.orEmpty()), MaterialTheme.colorScheme.onBackground, MaterialTheme.typography.headlineSmall, 28.sp, 2)
+                        Text("${videos.size} videos in this collection", fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
                     }
-                    LibraryV2Search(search, setSearch)
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) { LibraryV2SortChip(sort, setSort) }
+                    Icon(Icons.Outlined.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
+                }
+                LibraryV2Search(search, setSearch)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    LibraryV2SortChip(sort, setSort)
                 }
             }
         }
-        if (videos.isEmpty()) item { LibraryV2Empty(search.isNotBlank(), add) }
-        else items(videos, key = { it.id }) { LibraryV2VideoCard(it, open, favorite, previewingKey, setPreviewingKey) }
+        LazyColumn(
+            contentPadding = PaddingValues(top = 8.dp, bottom = 112.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            if (videos.isEmpty()) item { LibraryV2Empty(search.isNotBlank(), add) }
+            else items(videos, key = { it.id }) { LibraryV2VideoCard(it, open, favorite, previewingKey, setPreviewingKey) }
+        }
     }
 }
 
 @Composable
 private fun LibraryV2Empty(searching: Boolean, add: () -> Unit) {
-    Card(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), RoundedCornerShape(24.dp)) {
-        Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(if (searching) Icons.Outlined.SearchOff else Icons.Outlined.VideoLibrary, null, tint = MaterialTheme.colorScheme.primary)
+    Surface(
+        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(25.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f),
+    ) {
+        Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                if (searching) Icons.Outlined.SearchOff else Icons.Outlined.VideoLibrary,
+                null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(34.dp),
+            )
             Spacer(Modifier.height(10.dp))
-            Text(if (searching) "No matches" else "Nothing here yet", style = MaterialTheme.typography.titleMedium)
+            Text(if (searching) "Nothing matches" else "Your library is empty", style = MaterialTheme.typography.titleMedium)
             Text(
-                if (searching) "Try a different title or collection name." else "Import a local video to build your library.",
+                if (searching) "Try another title or collection name." else "Import a local video to start your library.",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (!searching) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Button(onClick = add) { Text("IMPORT") }
             }
         }
+    }
+}
+
+@Composable
+private fun AdaptiveLibraryText(
+    text: String,
+    color: Color,
+    style: androidx.compose.ui.text.TextStyle,
+    baseSize: androidx.compose.ui.unit.TextUnit,
+    maxLines: Int,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val compact = when {
+            text.length > 42 -> baseSize * .72f
+            text.length > 30 -> baseSize * .82f
+            text.length > 20 -> baseSize * .92f
+            else -> baseSize
+        }
+        Text(text, color = color, style = style.copy(fontSize = compact), maxLines = maxLines)
     }
 }
 
@@ -524,17 +552,6 @@ private fun LibraryV2Thumb(video: VideoItem, modifier: Modifier) {
     }
 }
 
-@Composable
-private fun AdaptiveLibraryText(
-    text: String,
-    color: Color,
-    style: androidx.compose.ui.text.TextStyle,
-    maxSize: androidx.compose.ui.unit.TextUnit,
-    maxLines: Int,
-) {
-    Text(text, color = color, style = style.copy(fontSize = maxSize), maxLines = maxLines)
-}
-
 private fun libraryV2FolderName(path: String): String =
     path.trimEnd('/').substringAfterLast('/').ifBlank { "Unsorted" }
 
@@ -545,9 +562,19 @@ private fun libraryV2SortLabel(sort: LibraryV2Sort): String = when (sort) {
 }
 
 private fun libraryV2Comparator(sort: LibraryV2Sort): Comparator<VideoItem> = when (sort) {
-    LibraryV2Sort.RECENT -> compareByDescending { it.lastPlayedAtMs.takeIf { t -> t > 0L } ?: it.addedAtMs }
-    LibraryV2Sort.TITLE -> compareBy { it.title.lowercase() }
-    LibraryV2Sort.PROGRESS -> compareByDescending { it.progress }
+    LibraryV2Sort.RECENT -> compareByDescending<VideoItem> { it.lastPlayedAtMs }.thenBy { it.title.lowercase() }
+    LibraryV2Sort.TITLE -> compareBy<VideoItem> { libraryV2NaturalKey(it.title) }.thenBy { it.title.lowercase() }
+    LibraryV2Sort.PROGRESS -> compareByDescending<VideoItem> { it.progress }.thenBy { it.title.lowercase() }
+}
+
+private fun libraryV2NaturalKey(title: String): String = buildString {
+    var cursor = 0
+    Regex("\\d+").findAll(title.lowercase()).forEach { match ->
+        append(title.substring(cursor, match.range.first).lowercase())
+        append(match.value.padStart(12, '0'))
+        cursor = match.range.last + 1
+    }
+    append(title.substring(cursor).lowercase())
 }
 
 private fun formatLibraryV2Progress(video: VideoItem): String {
