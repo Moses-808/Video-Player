@@ -32,15 +32,27 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
             val title = queryDisplayName(resolver, uri)
                 ?: uri.lastPathSegment?.substringAfterLast('/')
                 ?: "Untitled video"
+            
+            // Re-query within the IO thread to check for concurrent additions.
+            // This reduces (but doesn't eliminate) the race window.
             val existingIds = library.idsForUri(uri)
-            val existing = existingIds.firstNotNullOfOrNull(library::find)
-            val id = existing?.id ?: uri.toString().hashCode().toString(16)
+            var existing = existingIds.firstNotNullOfOrNull(library::find)
+            
+            val id = if (existing != null) {
+                existing.id
+            } else {
+                // Generate a new ID if no existing record was found
+                uri.toString().hashCode().toString(16)
+            }
+            
             val importedFolder = existing?.relativePath ?: queryDocumentFolder(resolver, uri)
             val item = (existing ?: VideoItem(id = id, uri = uri, title = title)).copy(
                 uri = uri,
                 title = title,
                 relativePath = importedFolder
             )
+            
+            // Upsert the item and clean up any stale duplicates for this URI
             library.upsert(item)
             existingIds.filter { it != id }.forEach(library::remove)
             _videos.value = library.all()
@@ -78,7 +90,17 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
 
     private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? = runCatching {
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
+            if (cursor.moveToFirst()) {
+                // Safely retrieve the display name column, guarding against null or missing columns.
+                val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (columnIndex >= 0 && !cursor.isNull(columnIndex)) {
+                    cursor.getString(columnIndex)
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
         }
     }.getOrNull()
 
