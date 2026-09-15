@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class PlaybackErrorRecoveryTest {
@@ -35,7 +36,7 @@ class PlaybackErrorRecoveryTest {
 
         verify(player, org.mockito.Mockito.never()).prepare()
         verify(player, org.mockito.Mockito.never()).playWhenReady = true
-        assertEquals("decoder initialization failed", controller.state.value.errorMessage)
+        assertEquals("ERROR_CODE_DECODER_INIT_FAILED: decoder initialization failed", controller.state.value.errorMessage)
         controller.release()
     }
 
