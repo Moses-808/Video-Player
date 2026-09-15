@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 
 /**
  * Local append-only behavioral log for Momentum signals.
@@ -31,9 +32,14 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
         private const val MAX_BYTES = 2L * 1024L * 1024L
         private const val TRIM_TO_LINES = 1_000
         private const val SHUTDOWN_TIMEOUT_SECONDS = 5L
+        private val logger = Logger.getLogger(MomentumEventRecorder::class.java.name)
     }
 
-    init { migrateLegacyLog() }
+    init {
+        migrateLegacyLog()
+        // Trim on startup to handle any unbounded growth from previous crashes
+        trimIfNeeded()
+    }
 
     override fun emit(event: MomentumEvent) {
         if (closed.get()) return
@@ -108,9 +114,12 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
     } else emptyList()
 
     private fun trimIfNeeded() {
-        if (file.length() <= MAX_BYTES) return
-        val lines = readLines().takeLast(TRIM_TO_LINES)
-        file.writeText(lines.joinToString(separator = "\n", postfix = "\n"))
+        if (!file.exists() || file.length() <= MAX_BYTES) return
+        runCatching {
+            val lines = readLines().takeLast(TRIM_TO_LINES)
+            file.writeText(lines.joinToString(separator = "\n", postfix = "\n"))
+            logger.info("Trimmed momentum event log from ${file.length()} bytes to ${lines.size} lines")
+        }
     }
 
     private fun migrateLegacyLog() {
@@ -124,7 +133,7 @@ class MomentumEventRecorder(context: Context) : MomentumEventSink {
                 }
             }
             legacyFile.delete()
-            trimIfNeeded()
+            logger.info("Migrated legacy momentum events log to JSONL format")
         }
     }
 
