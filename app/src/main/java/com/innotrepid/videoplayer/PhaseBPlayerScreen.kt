@@ -1,8 +1,6 @@
 package com.innotrepid.videoplayer
 
 import android.app.Activity
-import androidx.core.app.PictureInPictureModeChangedInfo
-import androidx.core.util.Consumer
 import android.content.Intent
 import android.content.Context
 import android.content.ContextWrapper
@@ -192,23 +190,17 @@ internal fun PhaseBPlayerScreen(
         }
     }
 
-    DisposableEffect(activity, state.isPlaying, state.errorMessage) {
-        val main = activity as? MainActivity
-        val host = activity as? ComponentActivity
-        main?.shouldEnterPipOnLeave = {
-            state.isPlaying && state.errorMessage == null && !inPictureInPicture
-        }
-        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
-            inPictureInPicture = info.isInPictureInPictureMode
-            if (info.isInPictureInPictureMode) chromeVisible = false
-        }
-        host?.addOnPictureInPictureModeChangedListener(listener)
-        inPictureInPicture = activity?.isInPictureInPictureMode == true
-        onDispose {
-            host?.removeOnPictureInPictureModeChangedListener(listener)
-            main?.shouldEnterPipOnLeave = { false }
-        }
-    }
+    PipTransportBinding(
+        activity = activity as? ComponentActivity,
+        controller = controller,
+        state = state,
+        next = next,
+        previous = previous,
+        open = open,
+        inPictureInPicture = inPictureInPicture,
+        setInPictureInPicture = { inPictureInPicture = it },
+        onEnterPipChromeHidden = { chromeVisible = false },
+    )
 
     LaunchedEffect(chromeVisible, upNextExpanded, state.isPlaying, speedBoostActive) {
         if (chromeVisible && state.errorMessage == null && !upNextExpanded && !speedBoostActive && !inPictureInPicture) {
@@ -438,7 +430,7 @@ internal fun PhaseBPlayerScreen(
                             tint = if (video.isFavorite) MaterialTheme.colorScheme.error else Color.White,
                         )
                     }
-                    IconButton(onClick = { (activity as? MainActivity)?.enterVideoPictureInPicture() }) {
+                    IconButton(onClick = { (activity as? MainActivity).enterPipWithState(state, next, previous) }) {
                         Icon(Icons.Outlined.PictureInPictureAlt, "Picture-in-picture", tint = Color.White)
                     }
                     IconButton(onClick = { fullscreen = !fullscreen }) {
