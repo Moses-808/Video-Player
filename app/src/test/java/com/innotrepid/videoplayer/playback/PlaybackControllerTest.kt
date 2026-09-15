@@ -6,6 +6,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.doReturn
@@ -102,7 +103,12 @@ class PlaybackControllerTest {
         val uri = mock(Uri::class.java)
         val controller = PlaybackController(player)
         controller.setMedia(uri, startPositionMs = 42_000L, autoPlay = true)
-        verify(player).setMediaItem(MediaItem.fromUri(uri), 42_000L)
+        val mediaItemCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
+        verify(player).setMediaItem(
+            mediaItemCaptor.capture(),
+            org.mockito.ArgumentMatchers.eq(42_000L)
+        )
+        assertEquals(uri, mediaItemCaptor.value.localConfiguration?.uri)
         verify(player).prepare()
         verify(player).playWhenReady = true
         controller.release()
@@ -137,19 +143,74 @@ class PlaybackControllerTest {
         val controller = PlaybackController(player)
         val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
         verify(player).addListener(listener.capture())
-        val mediaItem = mock(MediaItem::class.java)
-        doReturn(mediaItem).`when`(player).currentMediaItem
+        val uri = Uri.parse("file:///retry-test.mp4")
+        controller.setMedia(uri, autoPlay = false)
+
+        val mediaItemCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
+        verify(player).setMediaItem(
+            mediaItemCaptor.capture(),
+            org.mockito.ArgumentMatchers.eq(0L)
+        )
+        val activeMediaItem = mediaItemCaptor.value
+        listener.value.onMediaItemTransition(
+            activeMediaItem,
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+        )
         val error = mock(PlaybackException::class.java)
         doReturn("retry test").`when`(error).message
 
         listener.value.onPlayerError(error)
-
         controller.retry()
 
-        verify(player).prepare()
+        verify(player, org.mockito.Mockito.times(2)).prepare()
         verify(player).playWhenReady = true
-        verify(player, org.mockito.Mockito.times(1)).prepare()
         assertEquals(null, controller.state.value.errorMessage)
+        controller.release()
+    }
+
+    @Test
+    fun lateCallbacksFromPreviousMediaAreIgnoredAfterSwitch() {
+        val controller = PlaybackController(player)
+        val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
+        verify(player).addListener(listener.capture())
+        val uri = Uri.parse("file:///same-media.mp4")
+        val error = mock(PlaybackException::class.java)
+        doReturn("stale callback").`when`(error).message
+
+        controller.setMedia(uri, autoPlay = false)
+        val firstCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
+        verify(player).setMediaItem(
+            firstCaptor.capture(),
+            org.mockito.ArgumentMatchers.eq(0L)
+        )
+        val firstMediaItem = firstCaptor.value
+        listener.value.onMediaItemTransition(
+            firstMediaItem,
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+        )
+
+        controller.setMedia(uri, autoPlay = false)
+        val secondCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
+        verify(player, org.mockito.Mockito.times(2)).setMediaItem(
+            secondCaptor.capture(),
+            org.mockito.ArgumentMatchers.eq(0L)
+        )
+        val secondMediaItem = secondCaptor.allValues.last()
+        assertNotEquals(firstMediaItem, secondMediaItem)
+
+        listener.value.onMediaItemTransition(
+            firstMediaItem,
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+        )
+        listener.value.onPlayerError(error)
+        assertEquals(null, controller.state.value.errorMessage)
+
+        listener.value.onMediaItemTransition(
+            secondMediaItem,
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+        )
+        listener.value.onPlayerError(error)
+        assertEquals("stale callback", controller.state.value.errorMessage)
         controller.release()
     }
 
