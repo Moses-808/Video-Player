@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Audiotrack
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Favorite
@@ -110,6 +111,7 @@ internal fun PhaseBPlayerScreen(
     var speedMenu by remember { mutableStateOf(false) }
     var volumeMenu by remember { mutableStateOf(false) }
     var audioMenu by remember { mutableStateOf(false) }
+    var subtitleMenu by remember { mutableStateOf(false) }
     var upNextExpanded by remember { mutableStateOf(false) }
     var scrub by remember(video.id) { mutableFloatStateOf(Float.NaN) }
     var playerResizeMode by remember { mutableStateOf(PlayerResizeMode.FIT) }
@@ -352,6 +354,7 @@ internal fun PhaseBPlayerScreen(
                             volumeMenu = !volumeMenu
                             speedMenu = false
                             audioMenu = false
+                            subtitleMenu = false
                         }) {
                             Icon(
                                 if (state.isMuted) Icons.Outlined.VolumeOff
@@ -394,6 +397,7 @@ internal fun PhaseBPlayerScreen(
                                     audioMenu = !audioMenu
                                     speedMenu = false
                                     volumeMenu = false
+                                    subtitleMenu = false
                                 },
                             ) {
                                 Icon(Icons.Outlined.Audiotrack, "Audio track", tint = Color.White)
@@ -423,11 +427,73 @@ internal fun PhaseBPlayerScreen(
                             }
                         }
                     }
+                    if (state.subtitleTracks.isNotEmpty()) {
+                        Box {
+                            IconButton(
+                                onClick = {
+                                    subtitleMenu = !subtitleMenu
+                                    speedMenu = false
+                                    volumeMenu = false
+                                    audioMenu = false
+                                },
+                            ) {
+                                Icon(
+                                    Icons.Outlined.ClosedCaption,
+                                    "Subtitles",
+                                    tint = if (state.subtitlesEnabled) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        Color.White
+                                    },
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = subtitleMenu,
+                                onDismissRequest = { subtitleMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (!state.subtitlesEnabled) "✓ Off" else "Off",
+                                            color = if (!state.subtitlesEnabled) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                Color.Unspecified
+                                            },
+                                        )
+                                    },
+                                    onClick = {
+                                        controller.selectSubtitleTrack(null)
+                                        subtitleMenu = false
+                                    },
+                                )
+                                state.subtitleTracks.forEach { track ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (track.isSelected) "✓ ${track.label}" else track.label,
+                                                color = if (track.isSelected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    Color.Unspecified
+                                                },
+                                            )
+                                        },
+                                        onClick = {
+                                            controller.selectSubtitleTrack(track.id)
+                                            subtitleMenu = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Box {
                         IconButton(onClick = {
                             speedMenu = !speedMenu
                             volumeMenu = false
                             audioMenu = false
+                            subtitleMenu = false
                         }) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Outlined.Speed, "Speed", tint = Color.White)
