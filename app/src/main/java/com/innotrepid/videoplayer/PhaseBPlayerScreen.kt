@@ -189,17 +189,41 @@ internal fun PhaseBPlayerScreen(
                     this.player = player
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    subtitleView?.visibility = android.view.View.GONE
                     this.resizeMode = playerResizeMode.toMedia3()
                 }
             },
             update = {
                 it.player = player
                 it.resizeMode = playerResizeMode.toMedia3()
+                it.subtitleView?.visibility = android.view.View.GONE
             },
             modifier = Modifier
                 .fillMaxSize()
                 .clickable { chromeVisible = !chromeVisible },
         )
+
+        if (state.subtitleText.isNotEmpty() && state.errorMessage == null) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (chromeVisible) 110.dp else 36.dp),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                val bg = if (state.subtitleBackground) Color.Black.copy(alpha = 0.65f) else Color.Transparent
+                Text(
+                    text = state.subtitleText,
+                    color = Color.White,
+                    fontSize = state.subtitleTextSizeSp.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(bg)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+        }
 
         AnimatedVisibility(
             visible = chromeVisible && state.errorMessage == null,
@@ -253,17 +277,14 @@ internal fun PhaseBPlayerScreen(
                     }
                     IconButton(onClick = favorite) {
                         Icon(
-                            if (video.isFavorite) Icons.Outlined.Favorite
-                            else Icons.Outlined.FavoriteBorder,
+                            if (video.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
                             "Save",
-                            tint = if (video.isFavorite) MaterialTheme.colorScheme.error
-                            else Color.White,
+                            tint = if (video.isFavorite) MaterialTheme.colorScheme.error else Color.White,
                         )
                     }
                     IconButton(onClick = { fullscreen = !fullscreen }) {
                         Icon(
-                            if (fullscreen) Icons.Outlined.FullscreenExit
-                            else Icons.Outlined.Fullscreen,
+                            if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
                             "Fullscreen",
                             tint = Color.White,
                         )
@@ -294,10 +315,7 @@ internal fun PhaseBPlayerScreen(
                         onClick = controller::togglePlayPause,
                         modifier = Modifier.size(68.dp),
                     ) {
-                        AnimatedContent(
-                            targetState = state.isPlaying,
-                            label = "playback control",
-                        ) { playing ->
+                        AnimatedContent(targetState = state.isPlaying, label = "playback control") { playing ->
                             Icon(
                                 if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                                 contentDescription = null,
@@ -328,14 +346,9 @@ internal fun PhaseBPlayerScreen(
                             .align(Alignment.BottomCenter)
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
-                                formatPhaseBTime(
-                                    if (scrub.isNaN()) state.positionMs else scrub.toLong(),
-                                ),
+                                formatPhaseBTime(if (scrub.isNaN()) state.positionMs else scrub.toLong()),
                                 color = Color.White.copy(alpha = .82f),
                                 fontSize = 10.sp,
                             )
@@ -346,15 +359,9 @@ internal fun PhaseBPlayerScreen(
                             )
                         }
                         Slider(
-                            value = if (scrub.isNaN()) {
-                                state.positionMs.toFloat()
-                            } else {
-                                scrub.coerceIn(0f, state.durationMs.toFloat())
-                            },
-                            onValueChange = {
-                                scrub = it
-                                chromeVisible = true
-                            },
+                            value = if (scrub.isNaN()) state.positionMs.toFloat()
+                            else scrub.coerceIn(0f, state.durationMs.toFloat()),
+                            onValueChange = { scrub = it; chromeVisible = true },
                             onValueChangeFinished = {
                                 controller.seekTo(scrub.toLong())
                                 scrub = Float.NaN
@@ -379,16 +386,12 @@ internal fun PhaseBPlayerScreen(
                             subtitleMenu = false
                         }) {
                             Icon(
-                                if (state.isMuted) Icons.Outlined.VolumeOff
-                                else Icons.Outlined.VolumeUp,
+                                if (state.isMuted) Icons.Outlined.VolumeOff else Icons.Outlined.VolumeUp,
                                 "Volume",
                                 tint = Color.White,
                             )
                         }
-                        DropdownMenu(
-                            expanded = volumeMenu,
-                            onDismissRequest = { volumeMenu = false },
-                        ) {
+                        DropdownMenu(expanded = volumeMenu, onDismissRequest = { volumeMenu = false }) {
                             Column(Modifier.width(220.dp).padding(14.dp)) {
                                 Text("Volume", style = MaterialTheme.typography.titleSmall)
                                 Spacer(Modifier.height(8.dp))
@@ -404,9 +407,7 @@ internal fun PhaseBPlayerScreen(
                                     Text("Mute", style = MaterialTheme.typography.labelSmall)
                                     Switch(
                                         checked = state.isMuted,
-                                        onCheckedChange = {
-                                            controller.setVolume(if (it) 0f else 1f)
-                                        },
+                                        onCheckedChange = { controller.setVolume(if (it) 0f else 1f) },
                                     )
                                 }
                             }
@@ -414,30 +415,22 @@ internal fun PhaseBPlayerScreen(
                     }
                     if (state.audioTracks.isNotEmpty()) {
                         Box {
-                            IconButton(
-                                onClick = {
-                                    audioMenu = !audioMenu
-                                    speedMenu = false
-                                    volumeMenu = false
-                                    subtitleMenu = false
-                                },
-                            ) {
+                            IconButton(onClick = {
+                                audioMenu = !audioMenu
+                                speedMenu = false
+                                volumeMenu = false
+                                subtitleMenu = false
+                            }) {
                                 Icon(Icons.Outlined.Audiotrack, "Audio track", tint = Color.White)
                             }
-                            DropdownMenu(
-                                expanded = audioMenu,
-                                onDismissRequest = { audioMenu = false },
-                            ) {
+                            DropdownMenu(expanded = audioMenu, onDismissRequest = { audioMenu = false }) {
                                 state.audioTracks.forEach { track ->
                                     DropdownMenuItem(
                                         text = {
                                             Text(
                                                 if (track.isSelected) "✓ ${track.label}" else track.label,
-                                                color = if (track.isSelected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    Color.Unspecified
-                                                },
+                                                color = if (track.isSelected) MaterialTheme.colorScheme.primary
+                                                else Color.Unspecified,
                                             )
                                         },
                                         onClick = {
@@ -450,14 +443,12 @@ internal fun PhaseBPlayerScreen(
                         }
                     }
                     Box {
-                        IconButton(
-                            onClick = {
-                                subtitleMenu = !subtitleMenu
-                                speedMenu = false
-                                volumeMenu = false
-                                audioMenu = false
-                            },
-                        ) {
+                        IconButton(onClick = {
+                            subtitleMenu = !subtitleMenu
+                            speedMenu = false
+                            volumeMenu = false
+                            audioMenu = false
+                        }) {
                             Icon(
                                 Icons.Outlined.ClosedCaption,
                                 "Subtitles",
@@ -468,19 +459,13 @@ internal fun PhaseBPlayerScreen(
                                 },
                             )
                         }
-                        DropdownMenu(
-                            expanded = subtitleMenu,
-                            onDismissRequest = { subtitleMenu = false },
-                        ) {
+                        DropdownMenu(expanded = subtitleMenu, onDismissRequest = { subtitleMenu = false }) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
                                         if (!state.subtitlesEnabled) "✓ Off" else "Off",
-                                        color = if (!state.subtitlesEnabled) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            Color.Unspecified
-                                        },
+                                        color = if (!state.subtitlesEnabled) MaterialTheme.colorScheme.primary
+                                        else Color.Unspecified,
                                     )
                                 },
                                 onClick = {
@@ -493,11 +478,8 @@ internal fun PhaseBPlayerScreen(
                                     text = {
                                         Text(
                                             if (track.isSelected) "✓ ${track.label}" else track.label,
-                                            color = if (track.isSelected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                Color.Unspecified
-                                            },
+                                            color = if (track.isSelected) MaterialTheme.colorScheme.primary
+                                            else Color.Unspecified,
                                         )
                                     },
                                     onClick = {
@@ -506,6 +488,53 @@ internal fun PhaseBPlayerScreen(
                                     },
                                 )
                             }
+                            DropdownMenuItem(
+                                text = {
+                                    val sign = if (state.subtitleDelayMs >= 0) "+" else ""
+                                    Text("Delay  $sign${state.subtitleDelayMs} ms")
+                                },
+                                onClick = { },
+                                trailingIcon = {
+                                    Row {
+                                        Text(
+                                            "−",
+                                            modifier = Modifier
+                                                .clickable { controller.adjustSubtitleDelay(-500L) }
+                                                .padding(horizontal = 10.dp),
+                                        )
+                                        Text(
+                                            "+",
+                                            modifier = Modifier
+                                                .clickable { controller.adjustSubtitleDelay(500L) }
+                                                .padding(horizontal = 10.dp),
+                                        )
+                                    }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Reset delay") },
+                                onClick = { controller.setSubtitleDelay(0L) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Size  S") },
+                                onClick = { controller.setSubtitleTextSizeSp(14f) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Size  M") },
+                                onClick = { controller.setSubtitleTextSizeSp(18f) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Size  L") },
+                                onClick = { controller.setSubtitleTextSizeSp(24f) },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(if (state.subtitleBackground) "✓ Background" else "Background")
+                                },
+                                onClick = {
+                                    controller.setSubtitleBackground(!state.subtitleBackground)
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Load external…") },
                                 onClick = {
@@ -552,10 +581,7 @@ internal fun PhaseBPlayerScreen(
                                 )
                             }
                         }
-                        DropdownMenu(
-                            expanded = speedMenu,
-                            onDismissRequest = { speedMenu = false },
-                        ) {
+                        DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
                             listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
                                 val selected = kotlin.math.abs(state.playbackSpeed - speed) < 0.01f
                                 DropdownMenuItem(
@@ -574,12 +600,10 @@ internal fun PhaseBPlayerScreen(
                             }
                         }
                     }
-                    IconButton(
-                        onClick = {
-                            playerResizeMode = playerResizeMode.next()
-                            chromeVisible = true
-                        },
-                    ) {
+                    IconButton(onClick = {
+                        playerResizeMode = playerResizeMode.next()
+                        chromeVisible = true
+                    }) {
                         Icon(
                             playerResizeMode.icon,
                             contentDescription = "Aspect ratio: ${playerResizeMode.label}",
@@ -605,9 +629,7 @@ internal fun PhaseBPlayerScreen(
                             .clickable { upNextExpanded = !upNextExpanded },
                     ) {
                         Column(
-                            Modifier
-                                .padding(horizontal = 14.dp, vertical = 10.dp)
-                                .widthIn(max = 300.dp),
+                            Modifier.padding(horizontal = 14.dp, vertical = 10.dp).widthIn(max = 300.dp),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
@@ -626,15 +648,9 @@ internal fun PhaseBPlayerScreen(
                             ) {
                                 Column {
                                     Spacer(Modifier.height(7.dp))
-                                    Text(
-                                        next.title,
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelMedium,
-                                    )
+                                    Text(next.title, color = Color.White, style = MaterialTheme.typography.labelMedium)
                                     Spacer(Modifier.height(6.dp))
-                                    Button(onClick = { open(next) }) {
-                                        Text("Play next")
-                                    }
+                                    Button(onClick = { open(next) }) { Text("Play next") }
                                 }
                             }
                         }
@@ -649,10 +665,7 @@ internal fun PhaseBPlayerScreen(
                 shape = RoundedCornerShape(50),
                 color = Color.Black.copy(alpha = .58f),
             ) {
-                CircularProgressIndicator(
-                    Modifier.padding(18.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                CircularProgressIndicator(Modifier.padding(18.dp), color = MaterialTheme.colorScheme.primary)
             }
         }
 
@@ -688,15 +701,9 @@ private fun PlaybackErrorOverlay(
     onPrimary: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Surface(
-        Modifier.fillMaxSize().padding(22.dp),
-        color = Color.Transparent,
-    ) {
+    Surface(Modifier.fillMaxSize().padding(22.dp), color = Color.Transparent) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = Color.Black.copy(alpha = .93f),
-            ) {
+            Surface(shape = RoundedCornerShape(24.dp), color = Color.Black.copy(alpha = .93f)) {
                 Column(
                     Modifier.padding(22.dp).widthIn(max = 340.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -708,28 +715,14 @@ private fun PlaybackErrorOverlay(
                         modifier = Modifier.size(34.dp),
                     )
                     Spacer(Modifier.height(10.dp))
-                    Text(
-                        presentation.title,
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleSmall,
-                        textAlign = TextAlign.Center,
-                    )
+                    Text(presentation.title, color = Color.White, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        presentation.explanation,
-                        color = Color.White.copy(alpha = .72f),
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                    )
+                    Text(presentation.explanation, color = Color.White.copy(alpha = .72f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(18.dp))
-                    Button(onClick = onPrimary, modifier = Modifier.fillMaxWidth()) {
-                        Text(presentation.primaryLabel)
-                    }
+                    Button(onClick = onPrimary, modifier = Modifier.fillMaxWidth()) { Text(presentation.primaryLabel) }
                     if (presentation.primaryAction != PlaybackErrorAction.BACK_TO_LIBRARY) {
                         Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                            Text("Back to library")
-                        }
+                        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to library") }
                     }
                 }
             }
@@ -738,31 +731,14 @@ private fun PlaybackErrorOverlay(
 }
 
 private enum class PlayerResizeMode {
-    FIT,
-    FILL,
-    ZOOM,
-    ;
-
-    val label: String
-        get() = when (this) {
-            FIT -> "Fit"
-            FILL -> "Fill"
-            ZOOM -> "Zoom"
-        }
-
-    val icon
-        get() = when (this) {
-            FIT -> Icons.Outlined.FitScreen
-            FILL -> Icons.Outlined.AspectRatio
-            ZOOM -> Icons.Outlined.CropFree
-        }
-
-    fun next(): PlayerResizeMode = when (this) {
-        FIT -> FILL
-        FILL -> ZOOM
-        ZOOM -> FIT
+    FIT, FILL, ZOOM;
+    val label: String get() = when (this) { FIT -> "Fit"; FILL -> "Fill"; ZOOM -> "Zoom" }
+    val icon get() = when (this) {
+        FIT -> Icons.Outlined.FitScreen
+        FILL -> Icons.Outlined.AspectRatio
+        ZOOM -> Icons.Outlined.CropFree
     }
-
+    fun next(): PlayerResizeMode = when (this) { FIT -> FILL; FILL -> ZOOM; ZOOM -> FIT }
     fun toMedia3(): Int = when (this) {
         FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
         FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
@@ -771,11 +747,7 @@ private enum class PlayerResizeMode {
 }
 
 private fun formatPlaybackSpeed(speed: Float): String {
-    val normalized = if (kotlin.math.abs(speed - speed.toInt()) < 0.01f) {
-        speed.toInt().toString()
-    } else {
-        "%.2g".format(speed)
-    }
+    val normalized = if (kotlin.math.abs(speed - speed.toInt()) < 0.01f) speed.toInt().toString() else "%.2g".format(speed)
     return "${normalized}x"
 }
 
