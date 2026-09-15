@@ -227,12 +227,10 @@ fun VideoPlayerRootSafe() {
                             videos = videos,
                             predictions = predictions,
                             permission = permission,
-                            requestPermission = {
-                                permissionLauncher.launch(phaseBVideoPermissions())
-                            },
-                            onFavorite = vm::toggleFavorite,
-                            onOpen = { video -> session.openVideo(videos, video) },
-                            onOpenFolder = { folder ->
+                            request = { permissionLauncher.launch(phaseBVideoPermissions()) },
+                            favorite = vm::toggleFavorite,
+                            open = { video -> session.openVideo(videos, video) },
+                            library = { folder ->
                                 pendingFolder = folder
                                 navigateTo(PhaseBScreen.LIBRARY)
                             },
@@ -241,11 +239,11 @@ fun VideoPlayerRootSafe() {
                         PhaseBScreen.LIBRARY -> GroupedLibraryRoot(
                             videos = videos,
                             search = search,
-                            onSearchChange = { search = it },
-                            onOpen = { video -> session.openVideo(videos, video) },
-                            onFavorite = vm::toggleFavorite,
-                            pendingFolder = pendingFolder,
-                            onImport = { picker.launch(arrayOf("video/*")) },
+                            setSearch = { search = it },
+                            open = { video -> session.openVideo(videos, video) },
+                            favorite = vm::toggleFavorite,
+                            initialFolder = pendingFolder,
+                            add = { picker.launch(arrayOf("video/*")) },
                         )
 
                         PhaseBScreen.SAVED -> PhaseBSavedScreen(
