@@ -7,7 +7,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
@@ -21,10 +20,8 @@ import com.innotrepid.videoplayer.intelligence.VideoSessionQueue
 import com.innotrepid.videoplayer.library.VideoItem
 import com.innotrepid.videoplayer.library.VideoLibraryViewModel
 import com.innotrepid.videoplayer.playback.PlaybackController
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 /**
  * Owns the ExoPlayer instance, PlaybackController, current selection, session queue,
@@ -35,14 +32,14 @@ import kotlinx.coroutines.launch
 class PlaybackSession(
     val player: ExoPlayer,
     val controller: PlaybackController,
-    private val recorder: MomentumEventRecorder,
-    private val vm: VideoLibraryViewModel,
+    val recorder: MomentumEventRecorder,
+    val vm: VideoLibraryViewModel,
 ) {
     var selectedId by mutableStateOf<String?>(null)
-        private set
+        internal set
 
     var queue by mutableStateOf<VideoSessionQueue?>(null)
-        private set
+        internal set
 
     fun openVideo(videos: List<VideoItem>, video: VideoItem) {
         queue = VideoSessionQueue.create(videos, video.id)
@@ -103,7 +100,6 @@ fun PlaybackSessionEffects(
     val selected = videos.firstOrNull { it.id == session.selectedId }
     val latestSelected by rememberUpdatedState(selected)
     val latestQueue by rememberUpdatedState(session.queue)
-    val latestVideos by rememberUpdatedState(videos)
     val currentPersist by rememberUpdatedState { latestSelected?.let { session.persist(it) } }
 
     // Persist on background
