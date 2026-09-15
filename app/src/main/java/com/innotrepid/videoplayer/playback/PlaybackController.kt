@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.logging.Logger
 
 /**
  * Single command and event boundary around ExoPlayer.
@@ -43,6 +44,8 @@ class PlaybackController(
     private var released = false
     private var switchingMedia = false
     private var canRetry = false
+    private var retryCount = 0
+    private var lastErrorCodeName = ""
     private var activeMediaUri: Uri? = null
     private var mediaSequence = 0L
     private var activeMediaId: String? = null
@@ -113,14 +116,25 @@ class PlaybackController(
 
         override fun onPlayerError(error: PlaybackException) {
             if (!hasActiveMediaCallback()) return
+            val errorCodeName = error.errorCodeName.orEmpty()
+            val errorMessage = error.message.orEmpty()
+            lastErrorCodeName = errorCodeName
             canRetry = isRetryablePlaybackError(error)
+            retryCount = 0  // Reset retry counter on new error
+
             mutableState.value = mutableState.value.copy(
-                errorMessage = error.message ?: error.errorCodeName
+                errorMessage = "$errorCodeName: $errorMessage"
             )
+            
+            // Log error details for diagnostics
+            logger.warning(
+                "Playback error: code=$errorCodeName, retryable=$canRetry, message=$errorMessage"
+            )
+            
             eventFlow.tryEmit(
                 Event.Error(
                     player.currentPosition.coerceAtLeast(0L),
-                    "${error.errorCodeName}: ${error.message.orEmpty()}"
+                    "$errorCodeName: $errorMessage"
                 )
             )
             publish()
@@ -138,6 +152,7 @@ class PlaybackController(
         started = false
         completed = false
         canRetry = false
+        retryCount = 0
         callbackMediaId = null
         mutableState.value = PlaybackUiState()
         mediaSequence += 1L
@@ -210,6 +225,10 @@ class PlaybackController(
     /** Retry the current failed media from its current position. */
     fun retry() {
         if (released || !canRetry || player.currentMediaItem == null) return
+        
+        retryCount += 1
+        logger.info("Retry attempt #$retryCount for media with error code: $lastErrorCodeName")
+        
         canRetry = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
         player.prepare()
@@ -226,6 +245,7 @@ class PlaybackController(
         activeMediaId = null
         callbackMediaId = null
         switchingMedia = false
+        retryCount = 0
         mutableState.value = PlaybackUiState()
     }
 
@@ -247,6 +267,7 @@ class PlaybackController(
         activeMediaUri = null
         activeMediaId = null
         callbackMediaId = null
+        retryCount = 0
         player.removeListener(listener)
         player.release()
     }
@@ -314,5 +335,9 @@ class PlaybackController(
         // Unknown failures remain manually retryable so diagnostics and the
         // recovery path are still available without auto-looping retries.
         return true
+    }
+
+    companion object {
+        private val logger = Logger.getLogger(PlaybackController::class.java.name)
     }
 }
