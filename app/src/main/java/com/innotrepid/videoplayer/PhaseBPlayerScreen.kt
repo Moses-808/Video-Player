@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -193,6 +194,7 @@ internal fun PhaseBPlayerScreen(
 
     DisposableEffect(activity, state.isPlaying, state.errorMessage) {
         val main = activity as? MainActivity
+        val host = activity as? ComponentActivity
         main?.shouldEnterPipOnLeave = {
             state.isPlaying && state.errorMessage == null && !inPictureInPicture
         }
@@ -200,10 +202,10 @@ internal fun PhaseBPlayerScreen(
             inPictureInPicture = info.isInPictureInPictureMode
             if (info.isInPictureInPictureMode) chromeVisible = false
         }
-        activity?.addOnPictureInPictureModeChangedListener(listener)
+        host?.addOnPictureInPictureModeChangedListener(listener)
         inPictureInPicture = activity?.isInPictureInPictureMode == true
         onDispose {
-            activity?.removeOnPictureInPictureModeChangedListener(listener)
+            host?.removeOnPictureInPictureModeChangedListener(listener)
             main?.shouldEnterPipOnLeave = { false }
         }
     }
