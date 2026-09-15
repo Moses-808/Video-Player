@@ -1,6 +1,8 @@
 package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -9,6 +11,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,15 +22,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 import java.util.logging.Logger
 
-/**
- * Single command and event boundary around ExoPlayer.
- *
- * UI code can render the player view, but playback commands and playback
- * lifecycle events stay inside this class so there is one source of truth.
- *
- * Media switches are identity-gated: every load gets a unique mediaId. Listener
- * callbacks and published state are ignored unless they belong to the active id.
- */
 class PlaybackController(
     private val player: ExoPlayer,
 ) {
@@ -67,17 +61,19 @@ class PlaybackController(
     private var subtitlesEnabled = false
     private var externalSubtitleUri: Uri? = null
     private var externalSubtitleLabel: String? = null
+    private var subtitleDelayMs = 0L
+    private var subtitleTextSizeSp = 18f
+    private var subtitleBackground = true
+    private var pendingSubtitleText = ""
+    private var displayedSubtitleText = ""
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var subtitlePublishRunnable: Runnable? = null
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val transitionId = mediaItem?.mediaId
             if (released || switchingMedia) return
-            if (transitionId == null || transitionId != activeMediaId) {
-                logger.fine(
-                    "Ignoring media transition for id=$transitionId (active=$activeMediaId)",
-                )
-                return
-            }
+            if (transitionId == null || transitionId != activeMediaId) return
             callbackMediaId = transitionId
             publish()
         }
@@ -140,6 +136,14 @@ class PlaybackController(
             publish()
         }
 
+        override fun onCues(cueGroup: CueGroup) {
+            if (!hasActiveMediaCallback()) return
+            val text = cueGroup.cues.mapNotNull { cue ->
+                cue.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            }.joinToString("\n")
+            scheduleSubtitleText(text)
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             if (!hasActiveMediaCallback()) return
             val errorCodeName = error.errorCodeName.orEmpty()
@@ -147,16 +151,9 @@ class PlaybackController(
             lastErrorCodeName = errorCodeName
             canRetry = isRetryablePlaybackError(error)
             retryCount = 0
-
             mutableState.value = mutableState.value.copy(
                 errorMessage = "$errorCodeName: $errorMessage",
             )
-
-            logger.warning(
-                "Playback error: mediaId=$activeMediaId code=$errorCodeName " +
-                    "retryable=$canRetry message=$errorMessage",
-            )
-
             eventFlow.tryEmit(
                 Event.Error(
                     player.currentPosition.coerceAtLeast(0L),
@@ -174,7 +171,7 @@ class PlaybackController(
 
     fun updateNavigation(hasNext: Boolean, hasPrevious: Boolean) {
         if (released) return
-        if (this.hasNext == hasNext && this.hasPrevious == hasPrevious) return
+        if (this.hasNext == hasNext && this.hasPrevious == ste.hasPrevious) return
         this.hasNext = hasNext
         this.hasPrevious = hasPrevious
         publish()
@@ -182,7 +179,6 @@ class PlaybackController(
 
     fun setMedia(uri: Uri, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
         if (released) return
-
         switchingMedia = true
         try {
             started = false
@@ -198,17 +194,20 @@ class PlaybackController(
             subtitlesEnabled = false
             externalSubtitleUri = null
             externalSubtitleLabel = null
+            clearScheduledSubtitles()
 
             mediaSequence += 1L
             val mediaId = "playback-$mediaSequence"
             val mediaItem = buildMediaItem(uri, mediaId)
-
             activeMediaUri = uri
             activeMediaId = mediaId
 
             mutableState.value = PlaybackUiState(
                 hasNext = hasNext,
                 hasPrevious = hasPrevious,
+                subtitleDelayMs = subtitleDelayMs,
+                subtitleTextSizeSp = subtitleTextSizeSp,
+                subtitleBackground = subtitleBackground,
             )
 
             player.stop()
@@ -216,33 +215,23 @@ class PlaybackController(
             player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
             player.prepare()
             player.playWhenReady = autoPlay
-
-            if (player.currentMediaItem?.mediaId == mediaId) {
-                callbackMediaId = mediaId
-            }
+            if (player.currentMediaItem?.mediaId == mediaId) callbackMediaId = mediaId
         } finally {
             switchingMedia = false
         }
         publish()
     }
 
-    /**
-     * Attach an external subtitle file (SRT / VTT / ASS) to the current video and
-     * reload the media item without losing the playhead.
-     */
     fun loadExternalSubtitle(uri: Uri, displayName: String? = null) {
         if (released || switchingMedia) return
         val mediaUri = activeMediaUri ?: return
         externalSubtitleUri = uri
-        externalSubtitleLabel = displayName
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+        externalSubtitleLabel = displayName?.trim()?.takeIf { it.isNotEmpty() }
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "External subtitle"
         reloadCurrentMedia(mediaUri, preferExternalSubtitle = true)
     }
 
-    /** Remove any external subtitle and reload the current video. */
     fun clearExternalSubtitle() {
         if (released || switchingMedia) return
         if (externalSubtitleUri == null) return
@@ -252,23 +241,9 @@ class PlaybackController(
         reloadCurrentMedia(mediaUri, preferExternalSubtitle = false)
     }
 
-    fun play() {
-        if (released) return
-        canRetry = false
-        player.play()
-        publish()
-    }
-
-    fun pause() {
-        if (released) return
-        player.pause()
-        publish()
-    }
-
-    fun togglePlayPause() {
-        if (released) return
-        if (player.isPlaying) pause() else play()
-    }
+    fun play() { if (released) return; canRetry = false; player.play(); publish() }
+    fun pause() { if (released) return; player.pause(); publish() }
+    fun togglePlayPause() { if (released) return; if (player.isPlaying) pause() else play() }
 
     fun seekTo(positionMs: Long) {
         if (released) return
@@ -306,82 +281,108 @@ class PlaybackController(
         if (parts.size != 2) return
         val groupIndex = parts[0].toIntOrNull() ?: return
         val trackIndex = parts[1].toIntOrNull() ?: return
-
-        val tracks = player.currentTracks
-        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        val audioGroups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
         if (groupIndex !in audioGroups.indices) return
         val group = audioGroups[groupIndex]
-        if (trackIndex !in 0 until group.length) return
-        if (!group.isTrackSupported(trackIndex)) return
-
-        val mediaTrackGroup = group.mediaTrackGroup
-        val parameters = player.trackSelectionParameters
-            .buildUpon()
+        if (trackIndex !in 0 until group.length || !group.isTrackSupported(trackIndex)) return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-            .addOverride(TrackSelectionOverride(mediaTrackGroup, trackIndex))
+            .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
             .build()
-        player.trackSelectionParameters = parameters
         selectedAudioTrackId = trackId
-        audioTracks = audioTracks.map { option ->
-            option.copy(isSelected = option.id == trackId)
-        }
+        audioTracks = audioTracks.map { it.copy(isSelected = it.id == trackId) }
         publish()
     }
 
     fun selectSubtitleTrack(trackId: String?) {
         if (released || switchingMedia) return
-
         if (trackId == null) {
-            val parameters = player.trackSelectionParameters
-                .buildUpon()
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 .build()
-            player.trackSelectionParameters = parameters
             selectedSubtitleTrackId = null
             subtitlesEnabled = false
             subtitleTracks = subtitleTracks.map { it.copy(isSelected = false) }
+            clearScheduledSubtitles()
             publish()
             return
         }
-
         val parts = trackId.split(':')
         if (parts.size != 2) return
         val groupIndex = parts[0].toIntOrNull() ?: return
         val trackIndex = parts[1].toIntOrNull() ?: return
-
-        val tracks = player.currentTracks
-        val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        val textGroups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         if (groupIndex !in textGroups.indices) return
         val group = textGroups[groupIndex]
-        if (trackIndex !in 0 until group.length) return
-        if (!group.isTrackSupported(trackIndex)) return
-
-        val mediaTrackGroup = group.mediaTrackGroup
-        val parameters = player.trackSelectionParameters
-            .buildUpon()
+        if (trackIndex !in 0 until group.length || !group.isTrackSupported(trackIndex)) return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-            .addOverride(TrackSelectionOverride(mediaTrackGroup, trackIndex))
+            .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
             .build()
-        player.trackSelectionParameters = parameters
         selectedSubtitleTrackId = trackId
         subtitlesEnabled = true
-        subtitleTracks = subtitleTracks.map { option ->
-            option.copy(isSelected = option.id == trackId)
-        }
+        subtitleTracks = subtitleTracks.map { it.copy(isSelected = it.id == trackId) }
         publish()
     }
 
+    fun setSubtitleDelay(delayMs: Long) {
+        if (released) return
+        subtitleDelayMs = delayMs.coerceIn(-10_000L, 10_000L)
+        scheduleSubtitleText(pendingSubtitleText)
+        publish()
+    }
+
+    fun adjustSubtitleDelay(deltaMs: Long) {
+        setSubtitleDelay(subtitleDelayMs + deltaMs)
+    }
+
+    fun setSubtitleTextSizeSp(sizeSp: Float) {
+        if (released) return
+        subtitleTextSizeSp = sizeSp.coerceIn(12f, 36f)
+        publish()
+    }
+
+    fun setSubtitleBackground(enabled: Boolean) {
+        if (released) return
+        subtitleBackground = enabled
+        publish()
+    }
+
+    private fun scheduleSubtitleText(text: String) {
+        pendingSubtitleText = text
+        subtitlePublishRunnable?.let { mainHandler.removeCallbacks(it) }
+        subtitlePublishRunnable = null
+        if (text.isEmpty()) {
+            displayedSubtitleText = ""
+            publish()
+            return
+        }
+        val delay = subtitleDelayMs
+        if (delay <= 0L) {
+            displayedSubtitleText = text
+            publish()
+            return
+        }
+        val runnable = Runnable {
+            displayedSubtitleText = pendingSubtitleText
+            publish()
+        }
+        subtitlePublishRunnable = runnable
+        mainHandler.postDelayed(runnable, delay)
+    }
+
+    private fun clearScheduledSubtitles() {
+        subtitlePublishRunnable?.let { mainHandler.removeCallbacks(it) }
+        subtitlePublishRunnable = null
+        pendingSubtitleText = ""
+        displayedSubtitleText = ""
+    }
+
     fun retry() {
-        if (released || !canRetry || player.currentMediaItem == null) return
-        if (activeMediaId == null) return
-
+        if (released || !canRetry || player.currentMediaItem == null || activeMediaId == null) return
         retryCount += 1
-        logger.info(
-            "Retry attempt #$retryCount mediaId=$activeMediaId errorCode=$lastErrorCodeName",
-        )
-
         canRetry = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
         player.prepare()
@@ -412,7 +413,12 @@ class PlaybackController(
             subtitlesEnabled = false
             externalSubtitleUri = null
             externalSubtitleLabel = null
-            mutableState.value = PlaybackUiState()
+            clearScheduledSubtitles()
+            mutableState.value = PlaybackUiState(
+                subtitleDelayMs = subtitleDelayMs,
+                subtitleTextSizeSp = subtitleTextSizeSp,
+                subtitleBackground = subtitleBackground,
+            )
         } finally {
             switchingMedia = false
         }
@@ -422,12 +428,8 @@ class PlaybackController(
         if (released) null else activeMediaUri ?: player.currentMediaItem?.localConfiguration?.uri
 
     fun currentMediaId(): String? = if (released) null else activeMediaId
-
-    fun currentPositionMs(): Long =
-        if (released) 0L else player.currentPosition.coerceAtLeast(0L)
-
-    fun durationMs(): Long =
-        if (released) 0L else player.duration.takeIf { it > 0L } ?: 0L
+    fun currentPositionMs(): Long = if (released) 0L else player.currentPosition.coerceAtLeast(0L)
+    fun durationMs(): Long = if (released) 0L else player.duration.takeIf { it > 0L } ?: 0L
 
     fun release() {
         if (released) return
@@ -438,6 +440,7 @@ class PlaybackController(
             eventFlow.tryEmit(Event.Released(mediaUri, position, duration))
         }
         released = true
+        clearScheduledSubtitles()
         activeMediaUri = null
         activeMediaId = null
         callbackMediaId = null
@@ -464,7 +467,6 @@ class PlaybackController(
         val playWhenReady = player.playWhenReady
         val speed = player.playbackParameters?.speed ?: 1f
         val volume = player.volume
-
         switchingMedia = true
         try {
             started = false
@@ -476,16 +478,14 @@ class PlaybackController(
             subtitleTracks = emptyList()
             selectedSubtitleTrackId = null
             subtitlesEnabled = false
-
+            clearScheduledSubtitles()
             mediaSequence += 1L
             val mediaId = "playback-$mediaSequence"
             val mediaItem = buildMediaItem(mediaUri, mediaId)
             activeMediaId = mediaId
-
             player.stop()
             player.clearMediaItems()
-            player.trackSelectionParameters = player.trackSelectionParameters
-                .buildUpon()
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                 .build()
@@ -494,35 +494,31 @@ class PlaybackController(
             player.volume = volume
             player.prepare()
             player.playWhenReady = playWhenReady
-
-            if (player.currentMediaItem?.mediaId == mediaId) {
-                callbackMediaId = mediaId
-            }
+            if (player.currentMediaItem?.mediaId == mediaId) callbackMediaId = mediaId
         } finally {
             switchingMedia = false
         }
         publish()
         if (preferExternalSubtitle) {
-            val parameters = player.trackSelectionParameters
-                .buildUpon()
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                 .build()
-            player.trackSelectionParameters = parameters
         }
     }
 
     private fun buildMediaItem(uri: Uri, mediaId: String): MediaItem {
-        val builder = MediaItem.Builder()
-            .setUri(uri)
-            .setMediaId(mediaId)
+        val builder = MediaItem.Builder().setUri(uri).setMediaId(mediaId)
         val subtitleUri = externalSubtitleUri
         if (subtitleUri != null) {
-            val subtitle = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
-                .setMimeType(guessSubtitleMimeType(subtitleUri, externalSubtitleLabel))
-                .setLabel(externalSubtitleLabel ?: "External")
-                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                .build()
-            builder.setSubtitleConfigurations(listOf(subtitle))
+            builder.setSubtitleConfigurations(
+                listOf(
+                    MediaItem.SubtitleConfiguration.Builder(subtitleUri)
+                        .setMimeType(guessSubtitleMimeType(subtitleUri, externalSubtitleLabel))
+                        .setLabel(externalSubtitleLabel ?: "External")
+                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                        .build(),
+                ),
+            )
         }
         return builder.build()
     }
@@ -546,28 +542,16 @@ class PlaybackController(
     private fun refreshAudioTracks(tracks: Tracks) {
         val options = mutableListOf<AudioTrackOption>()
         var selectedId: String? = null
-        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-        audioGroups.forEachIndexed { groupIndex, group ->
+        tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }.forEachIndexed { groupIndex, group ->
             for (trackIndex in 0 until group.length) {
                 if (!group.isTrackSupported(trackIndex)) continue
                 val format = group.getTrackFormat(trackIndex)
                 val id = "$groupIndex:$trackIndex"
                 val language = format.language?.takeIf { it.isNotBlank() && it != "und" }
-                val label = buildAudioTrackLabel(
-                    explicitLabel = format.label,
-                    language = language,
-                    channelCount = format.channelCount,
-                    bitrate = format.bitrate,
-                    index = options.size + 1,
-                )
+                val label = buildAudioTrackLabel(format.label, language, format.channelCount, format.bitrate, options.size + 1)
                 val selected = group.isTrackSelected(trackIndex)
                 if (selected) selectedId = id
-                options += AudioTrackOption(
-                    id = id,
-                    label = label,
-                    language = language,
-                    isSelected = selected,
-                )
+                options += AudioTrackOption(id, label, language, selected)
             }
         }
         audioTracks = options
@@ -577,26 +561,16 @@ class PlaybackController(
     private fun refreshSubtitleTracks(tracks: Tracks) {
         val options = mutableListOf<SubtitleTrackOption>()
         var selectedId: String? = null
-        val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-        textGroups.forEachIndexed { groupIndex, group ->
+        tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.forEachIndexed { groupIndex, group ->
             for (trackIndex in 0 until group.length) {
                 if (!group.isTrackSupported(trackIndex)) continue
                 val format = group.getTrackFormat(trackIndex)
                 val id = "$groupIndex:$trackIndex"
                 val language = format.language?.takeIf { it.isNotBlank() && it != "und" }
-                val label = buildSubtitleTrackLabel(
-                    explicitLabel = format.label,
-                    language = language,
-                    index = options.size + 1,
-                )
+                val label = buildSubtitleTrackLabel(format.label, language, options.size + 1)
                 val selected = group.isTrackSelected(trackIndex)
                 if (selected) selectedId = id
-                options += SubtitleTrackOption(
-                    id = id,
-                    label = label,
-                    language = language,
-                    isSelected = selected,
-                )
+                options += SubtitleTrackOption(id, label, language, selected)
             }
         }
         subtitleTracks = options
@@ -605,43 +579,28 @@ class PlaybackController(
             !player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
     }
 
-    private fun buildAudioTrackLabel(
-        explicitLabel: String?,
-        language: String?,
-        channelCount: Int,
-        bitrate: Int,
-        index: Int,
-    ): String {
+    private fun buildAudioTrackLabel(explicitLabel: String?, language: String?, channelCount: Int, bitrate: Int, index: Int): String {
         val parts = mutableListOf<String>()
-        val cleanedLabel = explicitLabel?.trim()?.takeIf { it.isNotEmpty() }
-        if (cleanedLabel != null) {
-            parts += cleanedLabel
-        } else if (language != null) {
-            parts += languageDisplayName(language)
-        } else {
-            parts += "Track $index"
+        val cleaned = explicitLabel?.trim()?.takeIf { it.isNotEmpty() }
+        when {
+            cleaned != null -> parts += cleaned
+            language != null -> parts += languageDisplayName(language)
+            else -> parts += "Track $index"
         }
         when {
             channelCount >= 6 -> parts += "5.1"
             channelCount == 2 -> parts += "Stereo"
             channelCount == 1 -> parts += "Mono"
         }
-        if (bitrate > 0) {
-            parts += "${bitrate / 1000} kbps"
-        }
+        if (bitrate > 0) parts += "${bitrate / 1000} kbps"
         return parts.joinToString(" · ")
     }
 
-    private fun buildSubtitleTrackLabel(
-        explicitLabel: String?,
-        language: String?,
-        index: Int,
-    ): String {
-        val cleanedLabel = explicitLabel?.trim()?.takeIf { it.isNotEmpty() }
+    private fun buildSubtitleTrackLabel(explicitLabel: String?, language: String?, index: Int): String {
+        val cleaned = explicitLabel?.trim()?.takeIf { it.isNotEmpty() }
         return when {
-            cleanedLabel != null && language != null ->
-                "$cleanedLabel (${languageDisplayName(language)})"
-            cleanedLabel != null -> cleanedLabel
+            cleaned != null && language != null -> "$cleaned (${languageDisplayName(language)})"
+            cleaned != null -> cleaned
             language != null -> languageDisplayName(language)
             else -> "Subtitle $index"
         }
@@ -649,16 +608,13 @@ class PlaybackController(
 
     private fun languageDisplayName(code: String): String =
         runCatching {
-            val locale = Locale.forLanguageTag(code)
-            locale.getDisplayLanguage(Locale.getDefault()).ifBlank { code.uppercase(Locale.US) }
+            Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault()).ifBlank { code.uppercase(Locale.US) }
         }.getOrDefault(code.uppercase(Locale.US))
 
     private fun publish() {
         if (released || switchingMedia) return
         val currentId = player.currentMediaItem?.mediaId
-        if (activeMediaId != null && currentId != null && currentId != activeMediaId) {
-            return
-        }
+        if (activeMediaId != null && currentId != null && currentId != activeMediaId) return
         val duration = player.duration.takeIf { it > 0L } ?: 0L
         mutableState.value = mutableState.value.copy(
             isPlaying = player.isPlaying,
@@ -678,6 +634,10 @@ class PlaybackController(
             subtitlesEnabled = subtitlesEnabled,
             hasExternalSubtitle = externalSubtitleUri != null,
             externalSubtitleLabel = externalSubtitleLabel,
+            subtitleText = displayedSubtitleText,
+            subtitleDelayMs = subtitleDelayMs,
+            subtitleTextSizeSp = subtitleTextSizeSp,
+            subtitleBackground = subtitleBackground,
             errorMessage = mutableState.value.errorMessage,
         )
     }
@@ -685,33 +645,12 @@ class PlaybackController(
     private fun isRetryablePlaybackError(error: PlaybackException): Boolean {
         val code = error.errorCodeName.orEmpty().uppercase()
         val detail = error.message.orEmpty().lowercase()
-
-        if (code.contains("FILE_NOT_FOUND") ||
-            code.contains("PERMISSION") ||
-            code.contains("SECURITY") ||
-            code.contains("DECODER") ||
-            code.contains("CODEC") ||
-            code.contains("RENDERER") ||
-            code.contains("UNSUPPORTED") ||
-            detail.contains("no such file") ||
-            detail.contains("file not found") ||
-            detail.contains("access denied") ||
-            detail.contains("permission") ||
-            detail.contains("decoder") ||
+        if (code.contains("FILE_NOT_FOUND") || code.contains("PERMISSION") || code.contains("SECURITY") ||
+            code.contains("DECODER") || code.contains("CODEC") || code.contains("RENDERER") ||
+            code.contains("UNSUPPORTED") || detail.contains("no such file") || detail.contains("file not found") ||
+            detail.contains("access denied") || detail.contains("permission") || detail.contains("decoder") ||
             detail.contains("unsupported")
-        ) {
-            return false
-        }
-
-        if (code.contains("NETWORK") ||
-            code.contains("SOURCE") ||
-            code.contains("IO_") ||
-            detail.contains("network") ||
-            detail.contains("http")
-        ) {
-            return true
-        }
-
+        ) return false
         return true
     }
 
