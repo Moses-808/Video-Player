@@ -113,7 +113,7 @@ class PlaybackController(
 
         override fun onPlayerError(error: PlaybackException) {
             if (!hasActiveMediaCallback()) return
-            canRetry = true
+            canRetry = isRetryablePlaybackError(error)
             mutableState.value = mutableState.value.copy(
                 errorMessage = error.message ?: error.errorCodeName
             )
@@ -275,5 +275,44 @@ class PlaybackController(
             isMuted = player.volume <= 0f,
             errorMessage = mutableState.value.errorMessage,
         )
+    }
+
+    private fun isRetryablePlaybackError(error: PlaybackException): Boolean {
+        val code = error.errorCodeName.uppercase()
+        val detail = error.message.orEmpty().lowercase()
+
+        // These failures require a different user action or a different media
+        // file. Re-preparing the same item cannot repair them.
+        if (code.contains("FILE_NOT_FOUND") ||
+            code.contains("PERMISSION") ||
+            code.contains("SECURITY") ||
+            code.contains("DECODER") ||
+            code.contains("CODEC") ||
+            code.contains("RENDERER") ||
+            code.contains("UNSUPPORTED") ||
+            detail.contains("no such file") ||
+            detail.contains("file not found") ||
+            detail.contains("access denied") ||
+            detail.contains("permission") ||
+            detail.contains("decoder") ||
+            detail.contains("unsupported")
+        ) {
+            return false
+        }
+
+        // Network/source failures are normally transient and Media3 supports
+        // recovery by preparing the failed player again.
+        if (code.contains("NETWORK") ||
+            code.contains("SOURCE") ||
+            code.contains("IO_") ||
+            detail.contains("network") ||
+            detail.contains("http")
+        ) {
+            return true
+        }
+
+        // Unknown failures remain manually retryable so diagnostics and the
+        // recovery path are still available without auto-looping retries.
+        return true
     }
 }
