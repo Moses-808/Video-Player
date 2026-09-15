@@ -169,6 +169,11 @@ fun VideoPlayerRootSafe() {
                 favorite = { vm.toggleFavorite(selected.id) },
                 back = { session.closePlayer(selected) },
                 open = { video -> session.openSession(videos, video, selected) },
+                onRemove = {
+                    val id = selected.id
+                    session.closePlayer(selected)
+                    vm.remove(id)
+                },
             )
         } else {
             val order = PhaseBScreen.entries
