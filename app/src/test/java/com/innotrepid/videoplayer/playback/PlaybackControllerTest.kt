@@ -160,6 +160,7 @@ class PlaybackControllerTest {
         )
         val error = mock(PlaybackException::class.java)
         doReturn("retry test").`when`(error).message
+        doReturn("TEST_ERROR").`when`(error).errorCodeName
 
         listener.value.onPlayerError(error)
         controller.retry()
@@ -178,6 +179,7 @@ class PlaybackControllerTest {
         val uri = mock(Uri::class.java)
         val error = mock(PlaybackException::class.java)
         doReturn("stale callback").`when`(error).message
+        doReturn("STALE_ERROR").`when`(error).errorCodeName
 
         controller.setMedia(uri, autoPlay = false)
         val firstCaptor = ArgumentCaptor.forClass(MediaItem::class.java)
@@ -214,7 +216,7 @@ class PlaybackControllerTest {
             Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
         )
         listener.value.onPlayerError(error)
-        assertEquals("stale callback", controller.state.value.errorMessage)
+        assertEquals("STALE_ERROR: stale callback", controller.state.value.errorMessage)
         controller.release()
     }
 
