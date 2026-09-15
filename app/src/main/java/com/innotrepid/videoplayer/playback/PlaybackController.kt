@@ -50,6 +50,8 @@ class PlaybackController(
     private var mediaSequence = 0L
     private var activeMediaId: String? = null
     private var callbackMediaId: String? = null
+    private var hasNext = false
+    private var hasPrevious = false
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -120,22 +122,21 @@ class PlaybackController(
             val errorMessage = error.message.orEmpty()
             lastErrorCodeName = errorCodeName
             canRetry = isRetryablePlaybackError(error)
-            retryCount = 0  // Reset retry counter on new error
+            retryCount = 0
 
             mutableState.value = mutableState.value.copy(
-                errorMessage = "$errorCodeName: $errorMessage"
+                errorMessage = "$errorCodeName: $errorMessage",
             )
-            
-            // Log error details for diagnostics
+
             logger.warning(
-                "Playback error: code=$errorCodeName, retryable=$canRetry, message=$errorMessage"
+                "Playback error: code=$errorCodeName, retryable=$canRetry, message=$errorMessage",
             )
-            
+
             eventFlow.tryEmit(
                 Event.Error(
                     player.currentPosition.coerceAtLeast(0L),
-                    "$errorCodeName: $errorMessage"
-                )
+                    "$errorCodeName: $errorMessage",
+                ),
             )
             publish()
         }
@@ -143,6 +144,18 @@ class PlaybackController(
 
     init {
         player.addListener(listener)
+        publish()
+    }
+
+    /**
+     * Keep queue navigation flags in the same state stream the UI already consumes,
+     * so prev/next controls never rely on a second source of truth.
+     */
+    fun updateNavigation(hasNext: Boolean, hasPrevious: Boolean) {
+        if (released) return
+        if (this.hasNext == hasNext && this.hasPrevious == hasPrevious) return
+        this.hasNext = hasNext
+        this.hasPrevious = hasPrevious
         publish()
     }
 
@@ -154,7 +167,10 @@ class PlaybackController(
         canRetry = false
         retryCount = 0
         callbackMediaId = null
-        mutableState.value = PlaybackUiState()
+        mutableState.value = PlaybackUiState(
+            hasNext = hasNext,
+            hasPrevious = hasPrevious,
+        )
         mediaSequence += 1L
         val mediaId = "playback-$mediaSequence"
         val mediaItem = MediaItem.Builder()
@@ -225,10 +241,10 @@ class PlaybackController(
     /** Retry the current failed media from its current position. */
     fun retry() {
         if (released || !canRetry || player.currentMediaItem == null) return
-        
+
         retryCount += 1
         logger.info("Retry attempt #$retryCount for media with error code: $lastErrorCodeName")
-        
+
         canRetry = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
         player.prepare()
@@ -246,14 +262,19 @@ class PlaybackController(
         callbackMediaId = null
         switchingMedia = false
         retryCount = 0
+        hasNext = false
+        hasPrevious = false
         mutableState.value = PlaybackUiState()
     }
 
-    fun currentMediaUri(): Uri? = if (released) null else player.currentMediaItem?.localConfiguration?.uri
+    fun currentMediaUri(): Uri? =
+        if (released) null else player.currentMediaItem?.localConfiguration?.uri
 
-    fun currentPositionMs(): Long = if (released) 0L else player.currentPosition.coerceAtLeast(0L)
+    fun currentPositionMs(): Long =
+        if (released) 0L else player.currentPosition.coerceAtLeast(0L)
 
-    fun durationMs(): Long = if (released) 0L else player.duration.takeIf { it > 0L } ?: 0L
+    fun durationMs(): Long =
+        if (released) 0L else player.duration.takeIf { it > 0L } ?: 0L
 
     fun release() {
         if (released) return
@@ -268,6 +289,8 @@ class PlaybackController(
         activeMediaId = null
         callbackMediaId = null
         retryCount = 0
+        hasNext = false
+        hasPrevious = false
         player.removeListener(listener)
         player.release()
     }
@@ -294,6 +317,8 @@ class PlaybackController(
             playbackSpeed = player.playbackParameters?.speed ?: 1f,
             volume = player.volume,
             isMuted = player.volume <= 0f,
+            hasNext = hasNext,
+            hasPrevious = hasPrevious,
             errorMessage = mutableState.value.errorMessage,
         )
     }
@@ -302,8 +327,6 @@ class PlaybackController(
         val code = error.errorCodeName.orEmpty().uppercase()
         val detail = error.message.orEmpty().lowercase()
 
-        // These failures require a different user action or a different media
-        // file. Re-preparing the same item cannot repair them.
         if (code.contains("FILE_NOT_FOUND") ||
             code.contains("PERMISSION") ||
             code.contains("SECURITY") ||
@@ -321,8 +344,6 @@ class PlaybackController(
             return false
         }
 
-        // Network/source failures are normally transient and Media3 supports
-        // recovery by preparing the failed player again.
         if (code.contains("NETWORK") ||
             code.contains("SOURCE") ||
             code.contains("IO_") ||
@@ -332,8 +353,6 @@ class PlaybackController(
             return true
         }
 
-        // Unknown failures remain manually retryable so diagnostics and the
-        // recovery path are still available without auto-looping retries.
         return true
     }
 
