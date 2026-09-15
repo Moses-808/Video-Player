@@ -8,7 +8,7 @@
         android:allowBackup="true"
         android:label="Visonate"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VideoPlayer">
+        android:theme="@style/Theme.Visonate">
         <activity
             android:name=".MainActivity"
             android:exported="true"
