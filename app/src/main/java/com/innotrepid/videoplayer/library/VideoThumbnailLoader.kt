@@ -12,7 +12,7 @@ import android.media.MediaMetadataRetriever
 
 /** Loads small representative frames without keeping video bytes in the app. */
 object VideoThumbnailLoader {
-    private const val MAX_CACHE_ENTRIES = 24
+    private const val MAX_CACHE_ENTRIES = 64
     private val cache = object : LinkedHashMap<String, Bitmap>(MAX_CACHE_ENTRIES, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean = size > MAX_CACHE_ENTRIES
     }
