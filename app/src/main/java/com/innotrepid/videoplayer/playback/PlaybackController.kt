@@ -1,10 +1,13 @@
 package com.innotrepid.videoplayer.playback
 
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +15,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
 import java.util.logging.Logger
 
 /**
@@ -55,12 +59,12 @@ class PlaybackController(
     private var callbackMediaId: String? = null
     private var hasNext = false
     private var hasPrevious = false
+    private var audioTracks: List<AudioTrackOption> = emptyList()
+    private var selectedAudioTrackId: String? = null
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val transitionId = mediaItem?.mediaId
-            // Only adopt the transition when it matches the load we requested.
-            // Stale transitions from a previous mediaId must not become active.
             if (released || switchingMedia) return
             if (transitionId == null || transitionId != activeMediaId) {
                 logger.fine(
@@ -123,6 +127,12 @@ class PlaybackController(
             publish()
         }
 
+        override fun onTracksChanged(tracks: Tracks) {
+            if (!hasActiveMediaCallback()) return
+            refreshAudioTracks(tracks)
+            publish()
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             if (!hasActiveMediaCallback()) return
             val errorCodeName = error.errorCodeName.orEmpty()
@@ -155,10 +165,6 @@ class PlaybackController(
         publish()
     }
 
-    /**
-     * Keep queue navigation flags in the same state stream the UI already consumes,
-     * so prev/next controls never rely on a second source of truth.
-     */
     fun updateNavigation(hasNext: Boolean, hasPrevious: Boolean) {
         if (released) return
         if (this.hasNext == hasNext && this.hasPrevious == hasPrevious) return
@@ -167,12 +173,6 @@ class PlaybackController(
         publish()
     }
 
-    /**
-     * Load [uri] as a new media generation.
-     *
-     * Always allocates a fresh mediaId so callbacks that still refer to a previous
-     * generation are dropped even if the URI string is identical.
-     */
     fun setMedia(uri: Uri, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
         if (released) return
 
@@ -183,8 +183,9 @@ class PlaybackController(
             canRetry = false
             retryCount = 0
             lastErrorCodeName = ""
-            // Invalidate any in-flight callbacks from the previous generation.
             callbackMediaId = null
+            audioTracks = emptyList()
+            selectedAudioTrackId = null
 
             mediaSequence += 1L
             val mediaId = "playback-$mediaSequence"
@@ -196,8 +197,6 @@ class PlaybackController(
             activeMediaUri = uri
             activeMediaId = mediaId
 
-            // Publish a clean slate immediately so the UI does not flash stale
-            // position / error state from the previous video.
             mutableState.value = PlaybackUiState(
                 hasNext = hasNext,
                 hasPrevious = hasPrevious,
@@ -209,8 +208,6 @@ class PlaybackController(
             player.prepare()
             player.playWhenReady = autoPlay
 
-            // If the player already exposes this media item, accept callbacks
-            // without waiting for onMediaItemTransition (covers prepare errors).
             if (player.currentMediaItem?.mediaId == mediaId) {
                 callbackMediaId = mediaId
             }
@@ -238,7 +235,6 @@ class PlaybackController(
         if (player.isPlaying) pause() else play()
     }
 
-    /** Seek without changing the user's current play/pause intent. */
     fun seekTo(positionMs: Long) {
         if (released) return
         canRetry = false
@@ -248,7 +244,6 @@ class PlaybackController(
         publish()
     }
 
-    /** Relative seek without changing the user's current play/pause intent. */
     fun seekBy(deltaMs: Long) {
         if (released) return
         canRetry = false
@@ -270,7 +265,39 @@ class PlaybackController(
         publish()
     }
 
-    /** Retry the current failed media from its current position. */
+    /**
+     * Select an audio track previously published in [PlaybackUiState.audioTracks].
+     * [trackId] format is "{groupIndex}:{trackIndex}".
+     */
+    fun selectAudioTrack(trackId: String) {
+        if (released || switchingMedia) return
+        val parts = trackId.split(':')
+        if (parts.size != 2) return
+        val groupIndex = parts[0].toIntOrNull() ?: return
+        val trackIndex = parts[1].toIntOrNull() ?: return
+
+        val tracks = player.currentTracks
+        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        if (groupIndex !in audioGroups.indices) return
+        val group = audioGroups[groupIndex]
+        if (trackIndex !in 0 until group.length) return
+        if (!group.isTrackSupported(trackIndex)) return
+
+        val mediaTrackGroup = group.mediaTrackGroup
+        val parameters = player.trackSelectionParameters
+            .buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .addOverride(TrackSelectionOverride(mediaTrackGroup, trackIndex))
+            .build()
+        player.trackSelectionParameters = parameters
+        selectedAudioTrackId = trackId
+        // onTracksChanged will refresh labels/selection flags; publish optimistically.
+        audioTracks = audioTracks.map { option ->
+            option.copy(isSelected = option.id == trackId)
+        }
+        publish()
+    }
+
     fun retry() {
         if (released || !canRetry || player.currentMediaItem == null) return
         if (activeMediaId == null) return
@@ -287,7 +314,6 @@ class PlaybackController(
         publish()
     }
 
-    /** Stop and unload the current media without destroying the controller. */
     fun clearMedia() {
         if (released) return
         switchingMedia = true
@@ -304,6 +330,8 @@ class PlaybackController(
             lastErrorCodeName = ""
             hasNext = false
             hasPrevious = false
+            audioTracks = emptyList()
+            selectedAudioTrackId = null
             mutableState.value = PlaybackUiState()
         } finally {
             switchingMedia = false
@@ -336,6 +364,8 @@ class PlaybackController(
         retryCount = 0
         hasNext = false
         hasPrevious = false
+        audioTracks = emptyList()
+        selectedAudioTrackId = null
         player.removeListener(listener)
         player.release()
     }
@@ -344,21 +374,78 @@ class PlaybackController(
         if (!released && !switchingMedia) publish()
     }
 
-    /**
-     * Callbacks are only accepted for the active media generation.
-     *
-     * Uses both the transition-tracked id and the player's current mediaId so
-     * prepare-time errors are not dropped while still rejecting stale generations.
-     */
     private fun hasActiveMediaCallback(): Boolean {
         if (released || switchingMedia || activeMediaId == null) return false
         val currentId = player.currentMediaItem?.mediaId
         return callbackMediaId == activeMediaId || currentId == activeMediaId
     }
 
+    private fun refreshAudioTracks(tracks: Tracks) {
+        val options = mutableListOf<AudioTrackOption>()
+        var selectedId: String? = null
+        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        audioGroups.forEachIndexed { groupIndex, group ->
+            for (trackIndex in 0 until group.length) {
+                if (!group.isTrackSupported(trackIndex)) continue
+                val format = group.getTrackFormat(trackIndex)
+                val id = "$groupIndex:$trackIndex"
+                val language = format.language?.takeIf { it.isNotBlank() && it != "und" }
+                val label = buildAudioTrackLabel(
+                    explicitLabel = format.label,
+                    language = language,
+                    channelCount = format.channelCount,
+                    bitrate = format.bitrate,
+                    index = options.size + 1,
+                )
+                val selected = group.isTrackSelected(trackIndex)
+                if (selected) selectedId = id
+                options += AudioTrackOption(
+                    id = id,
+                    label = label,
+                    language = language,
+                    isSelected = selected,
+                )
+            }
+        }
+        audioTracks = options
+        selectedAudioTrackId = selectedId
+    }
+
+    private fun buildAudioTrackLabel(
+        explicitLabel: String?,
+        language: String?,
+        channelCount: Int,
+        bitrate: Int,
+        index: Int,
+    ): String {
+        val parts = mutableListOf<String>()
+        val cleanedLabel = explicitLabel?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanedLabel != null) {
+            parts += cleanedLabel
+        } else if (language != null) {
+            parts += languageDisplayName(language)
+        } else {
+            parts += "Track $index"
+        }
+        when {
+            channelCount >= 6 -> parts += "5.1"
+            channelCount == 2 -> parts += "Stereo"
+            channelCount == 1 -> parts += "Mono"
+        }
+        if (bitrate > 0) {
+            parts += "${bitrate / 1000} kbps"
+        }
+        return parts.joinToString(" · ")
+    }
+
+    private fun languageDisplayName(code: String): String =
+        runCatching {
+            val locale = Locale.forLanguageTag(code)
+            locale.getDisplayLanguage(Locale.getDefault()).ifBlank { code.uppercase(Locale.US) }
+        }.getOrDefault(code.uppercase(Locale.US))
+
     private fun publish() {
         if (released || switchingMedia) return
-        // Never publish player metrics that belong to a different media generation.
         val currentId = player.currentMediaItem?.mediaId
         if (activeMediaId != null && currentId != null && currentId != activeMediaId) {
             return
@@ -375,6 +462,8 @@ class PlaybackController(
             isMuted = player.volume <= 0f,
             hasNext = hasNext,
             hasPrevious = hasPrevious,
+            audioTracks = audioTracks,
+            selectedAudioTrackId = selectedAudioTrackId,
             errorMessage = mutableState.value.errorMessage,
         )
     }
