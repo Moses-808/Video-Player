@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class VideoLibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val library = VideoLibrary(application)
@@ -66,12 +67,27 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    /** Persist playback checkpoints away from the UI thread. */
+    /**
+     * Async progress checkpoint (safe for periodic / non-critical saves).
+     * Prefer [updateProgressBlocking] for lifecycle events that can precede process death.
+     */
     fun updateProgress(id: String, positionMs: Long, durationMs: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             library.updateProgress(id, positionMs, durationMs)
             _videos.value = library.all()
         }
+    }
+
+    /**
+     * Blocking progress write used on critical paths (ON_PAUSE / ON_STOP, player close,
+     * composition dispose). Ensures the JSON is flushed to disk before the process can
+     * be killed, so last watch position survives a full app close.
+     */
+    fun updateProgressBlocking(id: String, positionMs: Long, durationMs: Long) {
+        runBlocking(Dispatchers.IO) {
+            library.updateProgress(id, positionMs, durationMs)
+        }
+        _videos.value = library.all()
     }
 
     fun markCompleted(id: String) {

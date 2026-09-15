@@ -32,6 +32,9 @@ import kotlinx.coroutines.isActive
  *
  * Progress is persisted on pause, seek, completion, error, video switch, background,
  * composition dispose, and player release — not only on the periodic checkpoint.
+ *
+ * Critical paths (lifecycle pause/stop, close, dispose) use a blocking disk write so
+ * lastPositionMs survives process death after the app is fully closed.
  */
 class PlaybackSession(
     val player: ExoPlayer,
@@ -48,7 +51,7 @@ class PlaybackSession(
     fun openVideo(videos: List<VideoItem>, video: VideoItem) {
         val previousId = selectedId
         if (previousId != null && previousId != video.id) {
-            videos.firstOrNull { it.id == previousId }?.let { persist(it) }
+            videos.firstOrNull { it.id == previousId }?.let { persistBlocking(it) }
         }
         queue = VideoSessionQueue.create(videos, video.id)
         selectedId = video.id
@@ -56,28 +59,36 @@ class PlaybackSession(
 
     fun openSession(videos: List<VideoItem>, video: VideoItem, current: VideoItem?) {
         if (video.id == current?.id) return
-        current?.let { persist(it) }
+        current?.let { persistBlocking(it) }
         queue = queue?.moveTo(video.id) ?: VideoSessionQueue.create(videos, video.id)
         selectedId = video.id
     }
 
     fun closePlayer(current: VideoItem?) {
-        current?.let { persist(it) }
+        current?.let { persistBlocking(it) }
         controller.clearMedia()
         selectedId = null
     }
 
     /**
-     * Checkpoint the active controller position for [video].
-     *
-     * Falls back to the library's known duration when the player has not reported
-     * one yet, so early pause / background still saves a useful position.
+     * Non-blocking checkpoint (periodic / event-driven). Safe when process death is unlikely.
      */
     fun persist(video: VideoItem) {
         val duration = controller.durationMs().takeIf { it > 0L } ?: video.durationMs
         if (duration <= 0L) return
         val position = controller.currentPositionMs().coerceIn(0L, duration)
         vm.updateProgress(video.id, position, duration)
+    }
+
+    /**
+     * Blocking checkpoint used when the process may be killed immediately afterwards
+     * (background, close, dispose). Guarantees the library JSON is written to disk.
+     */
+    fun persistBlocking(video: VideoItem) {
+        val duration = controller.durationMs().takeIf { it > 0L } ?: video.durationMs
+        if (duration <= 0L) return
+        val position = controller.currentPositionMs().coerceIn(0L, duration)
+        vm.updateProgressBlocking(video.id, position, duration)
     }
 
     fun release() {
@@ -115,13 +126,14 @@ fun PlaybackSessionEffects(
     val latestSelected by rememberUpdatedState(selected)
     val latestVideos by rememberUpdatedState(videos)
     val latestQueue by rememberUpdatedState(session.queue)
-    val currentPersist by rememberUpdatedState { latestSelected?.let { session.persist(it) } }
+    val currentPersistBlocking by rememberUpdatedState { latestSelected?.let { session.persistBlocking(it) } }
 
-    // Persist on background / multi-window pause
+    // Durable persist on background / multi-window pause so a subsequent process kill
+    // still has the latest position on disk.
     DisposableEffect(lifecycleOwner, session.controller) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                currentPersist()
+                currentPersistBlocking()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -131,12 +143,12 @@ fun PlaybackSessionEffects(
     // Persist then release when the composition leaves
     DisposableEffect(session) {
         onDispose {
-            currentPersist()
+            currentPersistBlocking()
             session.release()
         }
     }
 
-    // Load media when selection changes
+    // Load media when selection changes — resume from the last saved position
     LaunchedEffect(session.selectedId) {
         val video = selected ?: return@LaunchedEffect
         session.controller.setMedia(
@@ -165,7 +177,7 @@ fun PlaybackSessionEffects(
                     val video = latestSelected?.takeIf { it.uri == event.mediaUri }
                         ?: latestVideos.firstOrNull { it.uri == event.mediaUri }
                     if (video != null && event.durationMs > 0L) {
-                        session.vm.updateProgress(
+                        session.vm.updateProgressBlocking(
                             video.id,
                             event.positionMs.coerceIn(0L, event.durationMs),
                             event.durationMs,
