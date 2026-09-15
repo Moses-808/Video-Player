@@ -22,6 +22,12 @@ data class PlaybackUiState(
     val subtitlesEnabled: Boolean = false,
     val hasExternalSubtitle: Boolean = false,
     val externalSubtitleLabel: String? = null,
+    /** Active subtitle lines after delay is applied (for Compose overlay). */
+    val subtitleText: String = "",
+    /** Signed offset in milliseconds; positive delays appearance. */
+    val subtitleDelayMs: Long = 0L,
+    val subtitleTextSizeSp: Float = 18f,
+    val subtitleBackground: Boolean = true,
     val errorMessage: String? = null,
 )
 
