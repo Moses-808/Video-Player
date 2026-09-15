@@ -3,6 +3,7 @@ package com.innotrepid.videoplayer.playback
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -64,6 +65,8 @@ class PlaybackController(
     private var subtitleTracks: List<SubtitleTrackOption> = emptyList()
     private var selectedSubtitleTrackId: String? = null
     private var subtitlesEnabled = false
+    private var externalSubtitleUri: Uri? = null
+    private var externalSubtitleLabel: String? = null
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -193,13 +196,12 @@ class PlaybackController(
             subtitleTracks = emptyList()
             selectedSubtitleTrackId = null
             subtitlesEnabled = false
+            externalSubtitleUri = null
+            externalSubtitleLabel = null
 
             mediaSequence += 1L
             val mediaId = "playback-$mediaSequence"
-            val mediaItem = MediaItem.Builder()
-                .setUri(uri)
-                .setMediaId(mediaId)
-                .build()
+            val mediaItem = buildMediaItem(uri, mediaId)
 
             activeMediaUri = uri
             activeMediaId = mediaId
@@ -222,6 +224,32 @@ class PlaybackController(
             switchingMedia = false
         }
         publish()
+    }
+
+    /**
+     * Attach an external subtitle file (SRT / VTT / ASS) to the current video and
+     * reload the media item without losing the playhead.
+     */
+    fun loadExternalSubtitle(uri: Uri, displayName: String? = null) {
+        if (released || switchingMedia) return
+        val mediaUri = activeMediaUri ?: return
+        externalSubtitleUri = uri
+        externalSubtitleLabel = displayName
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+            ?: "External subtitle"
+        reloadCurrentMedia(mediaUri, preferExternalSubtitle = true)
+    }
+
+    /** Remove any external subtitle and reload the current video. */
+    fun clearExternalSubtitle() {
+        if (released || switchingMedia) return
+        if (externalSubtitleUri == null) return
+        val mediaUri = activeMediaUri ?: return
+        externalSubtitleUri = null
+        externalSubtitleLabel = null
+        reloadCurrentMedia(mediaUri, preferExternalSubtitle = false)
     }
 
     fun play() {
@@ -300,10 +328,6 @@ class PlaybackController(
         publish()
     }
 
-    /**
-     * Select an embedded subtitle track, or pass null to disable text tracks.
-     * [trackId] format is "{groupIndex}:{trackIndex}".
-     */
     fun selectSubtitleTrack(trackId: String?) {
         if (released || switchingMedia) return
 
@@ -386,6 +410,8 @@ class PlaybackController(
             subtitleTracks = emptyList()
             selectedSubtitleTrackId = null
             subtitlesEnabled = false
+            externalSubtitleUri = null
+            externalSubtitleLabel = null
             mutableState.value = PlaybackUiState()
         } finally {
             switchingMedia = false
@@ -423,12 +449,92 @@ class PlaybackController(
         subtitleTracks = emptyList()
         selectedSubtitleTrackId = null
         subtitlesEnabled = false
+        externalSubtitleUri = null
+        externalSubtitleLabel = null
         player.removeListener(listener)
         player.release()
     }
 
     fun refresh() {
         if (!released && !switchingMedia) publish()
+    }
+
+    private fun reloadCurrentMedia(mediaUri: Uri, preferExternalSubtitle: Boolean) {
+        val position = player.currentPosition.coerceAtLeast(0L)
+        val playWhenReady = player.playWhenReady
+        val speed = player.playbackParameters?.speed ?: 1f
+        val volume = player.volume
+
+        switchingMedia = true
+        try {
+            started = false
+            completed = false
+            canRetry = false
+            callbackMediaId = null
+            audioTracks = emptyList()
+            selectedAudioTrackId = null
+            subtitleTracks = emptyList()
+            selectedSubtitleTrackId = null
+            subtitlesEnabled = false
+
+            mediaSequence += 1L
+            val mediaId = "playback-$mediaSequence"
+            val mediaItem = buildMediaItem(mediaUri, mediaId)
+            activeMediaId = mediaId
+
+            player.stop()
+            player.clearMediaItems()
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .build()
+            player.setMediaItem(mediaItem, position)
+            player.setPlaybackSpeed(speed)
+            player.volume = volume
+            player.prepare()
+            player.playWhenReady = playWhenReady
+
+            if (player.currentMediaItem?.mediaId == mediaId) {
+                callbackMediaId = mediaId
+            }
+        } finally {
+            switchingMedia = false
+        }
+        publish()
+        if (preferExternalSubtitle) {
+            val parameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .build()
+            player.trackSelectionParameters = parameters
+        }
+    }
+
+    private fun buildMediaItem(uri: Uri, mediaId: String): MediaItem {
+        val builder = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(mediaId)
+        val subtitleUri = externalSubtitleUri
+        if (subtitleUri != null) {
+            val subtitle = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
+                .setMimeType(guessSubtitleMimeType(subtitleUri, externalSubtitleLabel))
+                .setLabel(externalSubtitleLabel ?: "External")
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+            builder.setSubtitleConfigurations(listOf(subtitle))
+        }
+        return builder.build()
+    }
+
+    private fun guessSubtitleMimeType(uri: Uri, label: String?): String {
+        val name = (label ?: uri.lastPathSegment.orEmpty()).lowercase(Locale.US)
+        return when {
+            name.endsWith(".vtt") -> MimeTypes.TEXT_VTT
+            name.endsWith(".ass") || name.endsWith(".ssa") -> MimeTypes.TEXT_SSA
+            name.endsWith(".ttml") || name.endsWith(".xml") -> MimeTypes.APPLICATION_TTML
+            else -> MimeTypes.APPLICATION_SUBRIP
+        }
     }
 
     private fun hasActiveMediaCallback(): Boolean {
@@ -570,6 +676,8 @@ class PlaybackController(
             subtitleTracks = subtitleTracks,
             selectedSubtitleTrackId = selectedSubtitleTrackId,
             subtitlesEnabled = subtitlesEnabled,
+            hasExternalSubtitle = externalSubtitleUri != null,
+            externalSubtitleLabel = externalSubtitleLabel,
             errorMessage = mutableState.value.errorMessage,
         )
     }
