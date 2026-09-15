@@ -19,6 +19,9 @@ import java.util.logging.Logger
  *
  * UI code can render the player view, but playback commands and playback
  * lifecycle events stay inside this class so there is one source of truth.
+ *
+ * Media switches are identity-gated: every load gets a unique mediaId. Listener
+ * callbacks and published state are ignored unless they belong to the active id.
  */
 class PlaybackController(
     private val player: ExoPlayer,
@@ -55,14 +58,18 @@ class PlaybackController(
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            callbackMediaId = mediaItem?.mediaId
-            if (!released &&
-                !switchingMedia &&
-                activeMediaId != null &&
-                callbackMediaId == activeMediaId
-            ) {
-                publish()
+            val transitionId = mediaItem?.mediaId
+            // Only adopt the transition when it matches the load we requested.
+            // Stale transitions from a previous mediaId must not become active.
+            if (released || switchingMedia) return
+            if (transitionId == null || transitionId != activeMediaId) {
+                logger.fine(
+                    "Ignoring media transition for id=$transitionId (active=$activeMediaId)",
+                )
+                return
             }
+            callbackMediaId = transitionId
+            publish()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -129,7 +136,8 @@ class PlaybackController(
             )
 
             logger.warning(
-                "Playback error: code=$errorCodeName, retryable=$canRetry, message=$errorMessage",
+                "Playback error: mediaId=$activeMediaId code=$errorCodeName " +
+                    "retryable=$canRetry message=$errorMessage",
             )
 
             eventFlow.tryEmit(
@@ -159,32 +167,56 @@ class PlaybackController(
         publish()
     }
 
+    /**
+     * Load [uri] as a new media generation.
+     *
+     * Always allocates a fresh mediaId so callbacks that still refer to a previous
+     * generation are dropped even if the URI string is identical.
+     */
     fun setMedia(uri: Uri, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
         if (released) return
+
         switchingMedia = true
-        started = false
-        completed = false
-        canRetry = false
-        retryCount = 0
-        callbackMediaId = null
-        mutableState.value = PlaybackUiState(
-            hasNext = hasNext,
-            hasPrevious = hasPrevious,
-        )
-        mediaSequence += 1L
-        val mediaId = "playback-$mediaSequence"
-        val mediaItem = MediaItem.Builder()
-            .setUri(uri)
-            .setMediaId(mediaId)
-            .build()
-        activeMediaUri = uri
-        activeMediaId = mediaId
-        player.stop()
-        player.clearMediaItems()
-        player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
-        player.prepare()
-        player.playWhenReady = autoPlay
-        switchingMedia = false
+        try {
+            started = false
+            completed = false
+            canRetry = false
+            retryCount = 0
+            lastErrorCodeName = ""
+            // Invalidate any in-flight callbacks from the previous generation.
+            callbackMediaId = null
+
+            mediaSequence += 1L
+            val mediaId = "playback-$mediaSequence"
+            val mediaItem = MediaItem.Builder()
+                .setUri(uri)
+                .setMediaId(mediaId)
+                .build()
+
+            activeMediaUri = uri
+            activeMediaId = mediaId
+
+            // Publish a clean slate immediately so the UI does not flash stale
+            // position / error state from the previous video.
+            mutableState.value = PlaybackUiState(
+                hasNext = hasNext,
+                hasPrevious = hasPrevious,
+            )
+
+            player.stop()
+            player.clearMediaItems()
+            player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
+            player.prepare()
+            player.playWhenReady = autoPlay
+
+            // If the player already exposes this media item, accept callbacks
+            // without waiting for onMediaItemTransition (covers prepare errors).
+            if (player.currentMediaItem?.mediaId == mediaId) {
+                callbackMediaId = mediaId
+            }
+        } finally {
+            switchingMedia = false
+        }
         publish()
     }
 
@@ -241,9 +273,12 @@ class PlaybackController(
     /** Retry the current failed media from its current position. */
     fun retry() {
         if (released || !canRetry || player.currentMediaItem == null) return
+        if (activeMediaId == null) return
 
         retryCount += 1
-        logger.info("Retry attempt #$retryCount for media with error code: $lastErrorCodeName")
+        logger.info(
+            "Retry attempt #$retryCount mediaId=$activeMediaId errorCode=$lastErrorCodeName",
+        )
 
         canRetry = false
         mutableState.value = mutableState.value.copy(errorMessage = null)
@@ -255,20 +290,30 @@ class PlaybackController(
     /** Stop and unload the current media without destroying the controller. */
     fun clearMedia() {
         if (released) return
-        player.stop()
-        player.clearMediaItems()
-        activeMediaUri = null
-        activeMediaId = null
-        callbackMediaId = null
-        switchingMedia = false
-        retryCount = 0
-        hasNext = false
-        hasPrevious = false
-        mutableState.value = PlaybackUiState()
+        switchingMedia = true
+        try {
+            player.stop()
+            player.clearMediaItems()
+            activeMediaUri = null
+            activeMediaId = null
+            callbackMediaId = null
+            started = false
+            completed = false
+            canRetry = false
+            retryCount = 0
+            lastErrorCodeName = ""
+            hasNext = false
+            hasPrevious = false
+            mutableState.value = PlaybackUiState()
+        } finally {
+            switchingMedia = false
+        }
     }
 
     fun currentMediaUri(): Uri? =
-        if (released) null else player.currentMediaItem?.localConfiguration?.uri
+        if (released) null else activeMediaUri ?: player.currentMediaItem?.localConfiguration?.uri
+
+    fun currentMediaId(): String? = if (released) null else activeMediaId
 
     fun currentPositionMs(): Long =
         if (released) 0L else player.currentPosition.coerceAtLeast(0L)
@@ -296,17 +341,28 @@ class PlaybackController(
     }
 
     fun refresh() {
-        if (!released) publish()
+        if (!released && !switchingMedia) publish()
     }
 
-    private fun hasActiveMediaCallback(): Boolean =
-        !released &&
-            !switchingMedia &&
-            activeMediaId != null &&
-            callbackMediaId == activeMediaId
+    /**
+     * Callbacks are only accepted for the active media generation.
+     *
+     * Uses both the transition-tracked id and the player's current mediaId so
+     * prepare-time errors are not dropped while still rejecting stale generations.
+     */
+    private fun hasActiveMediaCallback(): Boolean {
+        if (released || switchingMedia || activeMediaId == null) return false
+        val currentId = player.currentMediaItem?.mediaId
+        return callbackMediaId == activeMediaId || currentId == activeMediaId
+    }
 
     private fun publish() {
-        if (released) return
+        if (released || switchingMedia) return
+        // Never publish player metrics that belong to a different media generation.
+        val currentId = player.currentMediaItem?.mediaId
+        if (activeMediaId != null && currentId != null && currentId != activeMediaId) {
+            return
+        }
         val duration = player.duration.takeIf { it > 0L } ?: 0L
         mutableState.value = mutableState.value.copy(
             isPlaying = player.isPlaying,
