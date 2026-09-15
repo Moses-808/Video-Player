@@ -78,18 +78,28 @@ class VideoLibrary(private val file: File) {
             val array = JSONArray(file.readText())
             for (index in 0 until array.length()) {
                 val value = array.getJSONObject(index)
+                
+                // Validate required fields (id and uri) before constructing VideoItem
+                val id = value.optString("id", "").takeIf { it.isNotBlank() }
+                val uriString = value.optString("uri", "").takeIf { it.isNotBlank() }
+                
+                if (id == null || uriString == null) {
+                    // Skip malformed entries instead of crashing
+                    continue
+                }
+                
                 val item = VideoItem(
-                    id = value.getString("id"),
-                    uri = Uri.parse(value.getString("uri")),
-                    title = value.optString("title", "Untitled video"),
-                    durationMs = value.optLong("durationMs", 0L),
-                    sizeBytes = value.optLong("sizeBytes", 0L),
-                    dateModifiedMs = value.optLong("dateModifiedMs", 0L),
-                    relativePath = if (value.isNull("relativePath")) null else value.optString("relativePath"),
-                    mimeType = if (value.isNull("mimeType")) null else value.optString("mimeType"),
-                    lastPositionMs = value.optLong("lastPositionMs", 0L),
-                    lastPlayedAtMs = value.optLong("lastPlayedAtMs", 0L),
-                    addedAtMs = value.optLong("addedAtMs", System.currentTimeMillis()),
+                    id = id,
+                    uri = Uri.parse(uriString),
+                    title = value.optString("title", "Untitled video").takeIf { it.isNotBlank() } ?: "Untitled video",
+                    durationMs = value.optLong("durationMs", 0L).coerceAtLeast(0L),
+                    sizeBytes = value.optLong("sizeBytes", 0L).coerceAtLeast(0L),
+                    dateModifiedMs = value.optLong("dateModifiedMs", 0L).coerceAtLeast(0L),
+                    relativePath = if (value.isNull("relativePath")) null else value.optString("relativePath").takeIf { it.isNotBlank() },
+                    mimeType = if (value.isNull("mimeType")) null else value.optString("mimeType").takeIf { it.isNotBlank() },
+                    lastPositionMs = value.optLong("lastPositionMs", 0L).coerceAtLeast(0L),
+                    lastPlayedAtMs = value.optLong("lastPlayedAtMs", 0L).coerceAtLeast(0L),
+                    addedAtMs = value.optLong("addedAtMs", System.currentTimeMillis()).coerceAtLeast(0L),
                     isFavorite = value.optBoolean("isFavorite", false)
                 )
                 items[item.id] = item
@@ -129,5 +139,5 @@ class VideoLibrary(private val file: File) {
     private fun StringBuilder.nullableField(name: String, value: String?) { separator(); append('"').append(name).append("\":"); if (value == null) append("null") else append('"').append(escapeJson(value)).append('"') }
     private fun StringBuilder.numberField(name: String, value: Long) { separator(); append('"').append(name).append("\":").append(value) }
     private fun StringBuilder.booleanField(name: String, value: Boolean) { separator(); append('"').append(name).append("\":").append(value) }
-    private fun escapeJson(value: String): String = buildString(value.length + 8) { value.forEach { char -> when (char) { '\\' -> append("\\\\"); '"' -> append("\\\""); '\b' -> append("\\b"); '\u000C' -> append("\\f"); '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t"); else -> if (char.code < 0x20) append("\\u").append(char.code.toString(16).padStart(4, '0')) else append(char) } } }
+    private fun escapeJson(value: String): String = buildString(value.length + 8) { value.forEach { char -> when (char) { '\\' -> append("\\\\"); '"' -> append("\\\""); '\b' -> append("\\b"); '\u000c' -> append("\\f"); '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t"); else -> append(char) } } }
 }
