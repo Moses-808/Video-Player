@@ -61,6 +61,9 @@ class PlaybackController(
     private var hasPrevious = false
     private var audioTracks: List<AudioTrackOption> = emptyList()
     private var selectedAudioTrackId: String? = null
+    private var subtitleTracks: List<SubtitleTrackOption> = emptyList()
+    private var selectedSubtitleTrackId: String? = null
+    private var subtitlesEnabled = false
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -130,6 +133,7 @@ class PlaybackController(
         override fun onTracksChanged(tracks: Tracks) {
             if (!hasActiveMediaCallback()) return
             refreshAudioTracks(tracks)
+            refreshSubtitleTracks(tracks)
             publish()
         }
 
@@ -186,6 +190,9 @@ class PlaybackController(
             callbackMediaId = null
             audioTracks = emptyList()
             selectedAudioTrackId = null
+            subtitleTracks = emptyList()
+            selectedSubtitleTrackId = null
+            subtitlesEnabled = false
 
             mediaSequence += 1L
             val mediaId = "playback-$mediaSequence"
@@ -265,10 +272,6 @@ class PlaybackController(
         publish()
     }
 
-    /**
-     * Select an audio track previously published in [PlaybackUiState.audioTracks].
-     * [trackId] format is "{groupIndex}:{trackIndex}".
-     */
     fun selectAudioTrack(trackId: String) {
         if (released || switchingMedia) return
         val parts = trackId.split(':')
@@ -291,8 +294,56 @@ class PlaybackController(
             .build()
         player.trackSelectionParameters = parameters
         selectedAudioTrackId = trackId
-        // onTracksChanged will refresh labels/selection flags; publish optimistically.
         audioTracks = audioTracks.map { option ->
+            option.copy(isSelected = option.id == trackId)
+        }
+        publish()
+    }
+
+    /**
+     * Select an embedded subtitle track, or pass null to disable text tracks.
+     * [trackId] format is "{groupIndex}:{trackIndex}".
+     */
+    fun selectSubtitleTrack(trackId: String?) {
+        if (released || switchingMedia) return
+
+        if (trackId == null) {
+            val parameters = player.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            player.trackSelectionParameters = parameters
+            selectedSubtitleTrackId = null
+            subtitlesEnabled = false
+            subtitleTracks = subtitleTracks.map { it.copy(isSelected = false) }
+            publish()
+            return
+        }
+
+        val parts = trackId.split(':')
+        if (parts.size != 2) return
+        val groupIndex = parts[0].toIntOrNull() ?: return
+        val trackIndex = parts[1].toIntOrNull() ?: return
+
+        val tracks = player.currentTracks
+        val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        if (groupIndex !in textGroups.indices) return
+        val group = textGroups[groupIndex]
+        if (trackIndex !in 0 until group.length) return
+        if (!group.isTrackSupported(trackIndex)) return
+
+        val mediaTrackGroup = group.mediaTrackGroup
+        val parameters = player.trackSelectionParameters
+            .buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .addOverride(TrackSelectionOverride(mediaTrackGroup, trackIndex))
+            .build()
+        player.trackSelectionParameters = parameters
+        selectedSubtitleTrackId = trackId
+        subtitlesEnabled = true
+        subtitleTracks = subtitleTracks.map { option ->
             option.copy(isSelected = option.id == trackId)
         }
         publish()
@@ -332,6 +383,9 @@ class PlaybackController(
             hasPrevious = false
             audioTracks = emptyList()
             selectedAudioTrackId = null
+            subtitleTracks = emptyList()
+            selectedSubtitleTrackId = null
+            subtitlesEnabled = false
             mutableState.value = PlaybackUiState()
         } finally {
             switchingMedia = false
@@ -366,6 +420,9 @@ class PlaybackController(
         hasPrevious = false
         audioTracks = emptyList()
         selectedAudioTrackId = null
+        subtitleTracks = emptyList()
+        selectedSubtitleTrackId = null
+        subtitlesEnabled = false
         player.removeListener(listener)
         player.release()
     }
@@ -411,6 +468,37 @@ class PlaybackController(
         selectedAudioTrackId = selectedId
     }
 
+    private fun refreshSubtitleTracks(tracks: Tracks) {
+        val options = mutableListOf<SubtitleTrackOption>()
+        var selectedId: String? = null
+        val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        textGroups.forEachIndexed { groupIndex, group ->
+            for (trackIndex in 0 until group.length) {
+                if (!group.isTrackSupported(trackIndex)) continue
+                val format = group.getTrackFormat(trackIndex)
+                val id = "$groupIndex:$trackIndex"
+                val language = format.language?.takeIf { it.isNotBlank() && it != "und" }
+                val label = buildSubtitleTrackLabel(
+                    explicitLabel = format.label,
+                    language = language,
+                    index = options.size + 1,
+                )
+                val selected = group.isTrackSelected(trackIndex)
+                if (selected) selectedId = id
+                options += SubtitleTrackOption(
+                    id = id,
+                    label = label,
+                    language = language,
+                    isSelected = selected,
+                )
+            }
+        }
+        subtitleTracks = options
+        selectedSubtitleTrackId = selectedId
+        subtitlesEnabled = selectedId != null &&
+            !player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+    }
+
     private fun buildAudioTrackLabel(
         explicitLabel: String?,
         language: String?,
@@ -436,6 +524,21 @@ class PlaybackController(
             parts += "${bitrate / 1000} kbps"
         }
         return parts.joinToString(" · ")
+    }
+
+    private fun buildSubtitleTrackLabel(
+        explicitLabel: String?,
+        language: String?,
+        index: Int,
+    ): String {
+        val cleanedLabel = explicitLabel?.trim()?.takeIf { it.isNotEmpty() }
+        return when {
+            cleanedLabel != null && language != null ->
+                "$cleanedLabel (${languageDisplayName(language)})"
+            cleanedLabel != null -> cleanedLabel
+            language != null -> languageDisplayName(language)
+            else -> "Subtitle $index"
+        }
     }
 
     private fun languageDisplayName(code: String): String =
@@ -464,6 +567,9 @@ class PlaybackController(
             hasPrevious = hasPrevious,
             audioTracks = audioTracks,
             selectedAudioTrackId = selectedAudioTrackId,
+            subtitleTracks = subtitleTracks,
+            selectedSubtitleTrackId = selectedSubtitleTrackId,
+            subtitlesEnabled = subtitlesEnabled,
             errorMessage = mutableState.value.errorMessage,
         )
     }
