@@ -14,6 +14,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -117,6 +120,14 @@ internal fun PhaseBPlayerScreen(
     var subtitleMenu by remember { mutableStateOf(false) }
     var upNextExpanded by remember { mutableStateOf(false) }
     var scrub by remember(video.id) { mutableFloatStateOf(Float.NaN) }
+    var gestureHint by remember { mutableStateOf<String?>(null) }
+    var brightness by remember {
+        mutableFloatStateOf(
+            activity?.window?.attributes?.screenBrightness
+                ?.takeIf { it in 0f..1f }
+                ?: 0.5f,
+        )
+    }
     var playerResizeMode by remember { mutableStateOf(PlayerResizeMode.FIT) }
     val pickSubtitle = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -175,6 +186,12 @@ internal fun PhaseBPlayerScreen(
             chromeVisible = false
         }
     }
+    LaunchedEffect(gestureHint) {
+        if (gestureHint != null) {
+            delay(900L)
+            gestureHint = null
+        }
+    }
     LaunchedEffect(controller, video.id) {
         while (true) {
             controller.refresh()
@@ -198,9 +215,68 @@ internal fun PhaseBPlayerScreen(
                 it.resizeMode = playerResizeMode.toMedia3()
                 it.subtitleView?.visibility = android.view.View.GONE
             },
-            modifier = Modifier
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        Box(
+            Modifier
                 .fillMaxSize()
-                .clickable { chromeVisible = !chromeVisible },
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { chromeVisible = !chromeVisible },
+                        onDoubleTap = { offset ->
+                            val third = size.width / 3f
+                            when {
+                                offset.x < third -> {
+                                    controller.seekBy(-10_000L)
+                                    gestureHint = "−10s"
+                                }
+                                offset.x > third * 2f -> {
+                                    controller.seekBy(10_000L)
+                                    gestureHint = "+10s"
+                                }
+                                else -> {
+                                    controller.togglePlayPause()
+                                    gestureHint = "Play / Pause"
+                                }
+                            }
+                            chromeVisible = true
+                        },
+                    )
+                }
+                .pointerInput(Unit) {
+                    var startVolume = state.volume
+                    var startBrightness = brightness
+                    var startX = 0f
+                    var totalDrag = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            startX = offset.x
+                            startVolume = state.volume
+                            startBrightness = brightness
+                            totalDrag = 0f
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            totalDrag += -dragAmount
+                            val fraction = (totalDrag / size.height.toFloat()).coerceIn(-1f, 1f)
+                            if (startX < size.width / 2f) {
+                                val next = (startBrightness + fraction).coerceIn(0.01f, 1f)
+                                brightness = next
+                                activity?.window?.let { win ->
+                                    val lp = win.attributes
+                                    lp.screenBrightness = next
+                                    win.attributes = lp
+                                }
+                                gestureHint = "Brightness ${(next * 100).toInt()}%"
+                            } else {
+                                val next = (startVolume + fraction).coerceIn(0f, 1f)
+                                controller.setVolume(next)
+                                gestureHint = "Volume ${(next * 100).toInt()}%"
+                            }
+                        },
+                    )
+                },
         )
 
         if (state.subtitleText.isNotEmpty() && state.errorMessage == null) {
@@ -222,6 +298,22 @@ internal fun PhaseBPlayerScreen(
                         .background(bg)
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 )
+            }
+        }
+
+        gestureHint?.let { hint ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Black.copy(alpha = 0.72f),
+                ) {
+                    Text(
+                        hint,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
             }
         }
 
