@@ -17,11 +17,22 @@ data class PlaybackUiState(
     val hasPrevious: Boolean = false,
     val audioTracks: List<AudioTrackOption> = emptyList(),
     val selectedAudioTrackId: String? = null,
+    val subtitleTracks: List<SubtitleTrackOption> = emptyList(),
+    val selectedSubtitleTrackId: String? = null,
+    val subtitlesEnabled: Boolean = false,
     val errorMessage: String? = null,
 )
 
 /** One selectable audio track exposed to the player UI. */
 data class AudioTrackOption(
+    val id: String,
+    val label: String,
+    val language: String? = null,
+    val isSelected: Boolean = false,
+)
+
+/** One selectable subtitle/text track exposed to the player UI. */
+data class SubtitleTrackOption(
     val id: String,
     val label: String,
     val language: String? = null,
